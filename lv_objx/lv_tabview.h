@@ -39,7 +39,7 @@ extern "C" {
  **********************/
 
 /* parametes: pointer to a tabview object, tab_id*/
-typedef void (*lv_tabview_action_t)(lv_obj_t *, uint16_t);
+typedef lv_res_t (*lv_tabview_action_t)(lv_obj_t *, uint16_t);
 
 /*Data of tab*/
 typedef struct

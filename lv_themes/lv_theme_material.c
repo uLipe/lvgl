@@ -288,7 +288,7 @@ static void lmeter_init(void)
     lmeter.body.grad_color = lmeter.body.main_color;
     lmeter.body.padding.hor = LV_DPI / 10;                       /*Scale line length*/
     lmeter.line.color = LV_COLOR_HEX3(0x999);
-    lmeter.line.width = 3;
+    lmeter.line.width = 2;
 
     theme.lmeter = &lmeter;
 #endif
@@ -306,7 +306,7 @@ static void gauge_init(void)
     gauge.body.padding.inner = LV_DPI / 8;
     gauge.body.border.color = LV_COLOR_HEX3(0x999);
     gauge.text.color = LV_COLOR_HEX3(0x333);
-    gauge.line.width = 3;
+    gauge.line.width = 1;
     gauge.line.color = lv_color_hsv_to_rgb(_hue, 95, 70);
 
     theme.gauge = &gauge;
