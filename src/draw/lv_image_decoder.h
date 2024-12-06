@@ -19,6 +19,7 @@ extern "C" {
 #include "../misc/lv_fs.h"
 #include "../misc/lv_types.h"
 #include "../misc/lv_area.h"
+#include "../misc/cache/lv_cache.h"
 
 /*********************
  *      DEFINES

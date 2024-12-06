@@ -9,7 +9,8 @@
 #include "lv_demo_multilang.h"
 
 #if LV_USE_DEMO_MULTILANG
-#include "../../lvgl_private.h"
+
+#include "../../src/indev/lv_indev_scroll.h"
 
 /*********************
  *      DEFINES

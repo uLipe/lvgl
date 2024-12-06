@@ -55,13 +55,13 @@ void lv_draw_vg_lite_fill(lv_draw_unit_t * draw_unit, const lv_draw_fill_dsc_t *
         return;
     }
 
-    LV_PROFILER_DRAW_BEGIN;
+    LV_PROFILER_BEGIN;
 
     vg_lite_matrix_t matrix = u->global_matrix;
 
     lv_vg_lite_path_t * path = lv_vg_lite_path_get(u, VG_LITE_FP32);
     lv_vg_lite_path_set_quality(path, dsc->radius == 0 ? VG_LITE_LOW : VG_LITE_HIGH);
-    lv_vg_lite_path_set_bounding_box_area(path, &clip_area);
+    lv_vg_lite_path_set_bonding_box_area(path, &clip_area);
     lv_vg_lite_path_append_rect(path,
                                 coords->x1, coords->y1,
                                 lv_area_get_width(coords), lv_area_get_height(coords),
@@ -91,7 +91,7 @@ void lv_draw_vg_lite_fill(lv_draw_unit_t * draw_unit, const lv_draw_fill_dsc_t *
     }
     else { /* normal fill */
         vg_lite_color_t color = lv_vg_lite_color(dsc->color, dsc->opa, true);
-        LV_PROFILER_DRAW_BEGIN_TAG("vg_lite_draw");
+        LV_PROFILER_BEGIN_TAG("vg_lite_draw");
         LV_VG_LITE_CHECK_ERROR(vg_lite_draw(
                                    &u->target_buffer,
                                    vg_lite_path,
@@ -99,12 +99,12 @@ void lv_draw_vg_lite_fill(lv_draw_unit_t * draw_unit, const lv_draw_fill_dsc_t *
                                    &matrix,
                                    VG_LITE_BLEND_SRC_OVER,
                                    color));
-        LV_PROFILER_DRAW_END_TAG("vg_lite_draw");
+        LV_PROFILER_END_TAG("vg_lite_draw");
     }
 
     lv_vg_lite_path_drop(u, path);
 
-    LV_PROFILER_DRAW_END;
+    LV_PROFILER_END;
 }
 
 /**********************

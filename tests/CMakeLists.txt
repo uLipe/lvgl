@@ -169,7 +169,7 @@ endif()
 
 # Options lvgl and examples are compiled with.
 set(COMPILE_OPTIONS
-    -DLV_CONF_PATH="${LVGL_TEST_DIR}/src/lv_test_conf.h"
+    -DLV_CONF_PATH=${LVGL_TEST_DIR}/src/lv_test_conf.h
     -DLV_BUILD_TEST
     ${BUILD_OPTIONS}
     ${BUILD_TARGET_DEF}
@@ -205,8 +205,6 @@ if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
         -Werror=strict-aliasing
         -Wno-double-promotion
         -Wno-unreachable-code
-        -Wno-gnu-zero-variadic-macro-arguments
-	-Wno-overlength-strings
     )
 else()
     list(APPEND COMPILE_OPTIONS
@@ -331,20 +329,16 @@ if(NOT WIN32)
 
     # Wayland
     find_package(PkgConfig)
-    pkg_check_modules(wayland_client wayland-client)
+    pkg_check_modules(wayland-client REQUIRED wayland-client)
+    pkg_check_modules(wayland-cursor REQUIRED wayland-cursor)
+    pkg_check_modules(xkbcommon REQUIRED xkbcommon)
 
-    if (wayland_client_FOUND)
-        pkg_check_modules(wayland-cursor REQUIRED wayland-cursor)
-        pkg_check_modules(xkbcommon REQUIRED xkbcommon)
+    link_libraries(wayland-client wayland-cursor xkbcommon)
 
-        link_libraries(wayland-client wayland-cursor xkbcommon)
+    # Add auto generated source required for XDG shell
+    include_directories("${LVGL_TEST_DIR}/wayland_protocols")
+    target_sources(test_common PUBLIC "wayland_protocols/wayland_xdg_shell.c")
 
-        # Add auto generated source required for XDG shell
-        include_directories("${LVGL_TEST_DIR}/wayland_protocols")
-        target_sources(test_common PUBLIC "wayland_protocols/wayland_xdg_shell.c")
-    else()
-        add_definitions(-DLV_USE_WAYLAND=0)
-    endif()
 endif()
 
 # libpng is required for the png test case

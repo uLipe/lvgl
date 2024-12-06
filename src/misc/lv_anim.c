@@ -3,6 +3,10 @@
  *
  */
 
+/**
+ * Modified by NXP in 2024
+ */
+
 /*********************
  *      INCLUDES
  *********************/
@@ -81,6 +85,7 @@ void lv_anim_init(lv_anim_t * a)
     a->repeat_cnt = 1;
     a->path_cb = lv_anim_path_linear;
     a->early_apply = 1;
+    a->anim_pause = false;
 }
 
 lv_anim_t * lv_anim_start(const lv_anim_t * a)
@@ -126,6 +131,45 @@ lv_anim_t * lv_anim_start(const lv_anim_t * a)
 
     LV_TRACE_ANIM("finished");
     return new_anim;
+}
+
+bool lv_anim_pause(void * var, lv_anim_exec_xcb_t exec_cb)
+{
+    lv_anim_t * a;
+    lv_anim_t * a_next;
+    bool pause = false;
+    a        = lv_ll_get_head(anim_ll_p);
+    while(a != NULL) {
+        a_next = lv_ll_get_next(anim_ll_p, a);
+
+        if((a->var == var || var == NULL) && (a->exec_cb == exec_cb || exec_cb == NULL)) {
+            a->anim_pause = true;
+            anim_mark_list_change();
+            pause = true;
+        }
+
+        a = a_next;
+    }
+    return pause;
+}
+
+bool lv_anim_resume(void * var, lv_anim_exec_xcb_t exec_cb)
+{
+    lv_anim_t * a;
+    lv_anim_t * a_next;
+    bool resume = false;
+    a        = lv_ll_get_head(anim_ll_p);
+    while(a != NULL) {
+        a_next = lv_ll_get_next(anim_ll_p, a);
+
+        if((a->var == var || var == NULL) && (a->exec_cb == exec_cb || exec_cb == NULL)) {
+            a->anim_pause = false;
+            anim_mark_list_change();
+            resume = true;
+        }
+        a = a_next;
+    }
+    return resume;
 }
 
 uint32_t lv_anim_get_playtime(const lv_anim_t * a)
@@ -511,7 +555,7 @@ static void anim_timer(lv_timer_t * param)
          */
         state.anim_list_changed = false;
 
-        if(a->run_round != state.anim_run_round) {
+        if(a->run_round != state.anim_run_round && !a->anim_pause) {
             a->run_round = state.anim_run_round; /*The list readying might be reset so need to know which anim has run already*/
 
             /*The animation will run now for the first time. Call `start_cb`*/
@@ -533,10 +577,8 @@ static void anim_timer(lv_timer_t * param)
             }
 
             if(a->act_time >= 0) {
-                int32_t act_time_original = a->act_time; /*The unclipped version is used later to correctly repeat the animation*/
                 if(a->act_time > a->duration) a->act_time = a->duration;
 
-                int32_t act_time_before_exec = a->act_time;
                 int32_t new_value;
                 new_value = a->path_cb(a);
 
@@ -547,15 +589,9 @@ static void anim_timer(lv_timer_t * param)
                     if(!state.anim_list_changed && a->custom_exec_cb) a->custom_exec_cb(a, new_value);
                 }
 
-                if(!state.anim_list_changed) {
-                    /*Restore the original time to see is there is over time.
-                     *Restore only if it wasn't changed in the `exec_cb` for some special reasons.*/
-                    if(a->act_time == act_time_before_exec) a->act_time = act_time_original;
-
-                    /*If the time is elapsed the animation is ready*/
-                    if(a->act_time >= a->duration) {
-                        anim_completed_handler(a);
-                    }
+                /*If the time is elapsed the animation is ready*/
+                if(!state.anim_list_changed && a->act_time >= a->duration) {
+                    anim_completed_handler(a);
                 }
             }
         }
@@ -600,10 +636,7 @@ static void anim_completed_handler(lv_anim_t * a)
     }
     /*If the animation is not deleted then restart it*/
     else {
-        /*Restart the animation. If the time is over a little compensate it.*/
-        int32_t over_time = 0;
-        if(a->act_time > a->duration) over_time = a->act_time - a->duration;
-        a->act_time = over_time - (int32_t)(a->repeat_delay);
+        a->act_time = -(int32_t)(a->repeat_delay); /*Restart the animation*/
         /*Swap the start and end values in play back mode*/
         if(a->playback_duration != 0) {
             /*If now turning back use the 'playback_pause*/

@@ -3,6 +3,10 @@
  *
  */
 
+/**
+ * Modified by NXP in 2024
+ */
+
 #ifndef LV_GLOBAL_H
 #define LV_GLOBAL_H
 
@@ -65,18 +69,18 @@ struct _snippet_stack;
 #endif
 
 #if LV_USE_FREETYPE
-struct _lv_freetype_context_t;
+struct lv_freetype_context_t;
 #endif
 
 #if LV_USE_PROFILER && LV_USE_PROFILER_BUILTIN
-struct _lv_profiler_builtin_ctx_t;
+struct lv_profiler_builtin_ctx_t;
 #endif
 
 #if LV_USE_NUTTX
-struct _lv_nuttx_ctx_t;
+struct lv_nuttx_ctx_t;
 #endif
 
-typedef struct _lv_global_t {
+typedef struct lv_global_t {
     bool inited;
     bool deinit_in_progress;     /**< Can be used e.g. in the LV_EVENT_DELETE to deinit the drivers too */
 
@@ -165,6 +169,10 @@ typedef struct _lv_global_t {
     lv_fs_drv_t fatfs_fs_drv;
 #endif
 
+#if LV_USE_FS_RAWFS
+    lv_fs_drv_t rawfs_fs_drv;
+#endif
+
 #if LV_USE_FS_WIN32 != '\0'
     lv_fs_drv_t win32_fs_drv;
 #endif
@@ -182,7 +190,7 @@ typedef struct _lv_global_t {
 #endif
 
 #if LV_USE_FREETYPE
-    struct _lv_freetype_context_t * ft_context;
+    struct lv_freetype_context_t * ft_context;
 #endif
 
 #if LV_USE_FONT_COMPRESSED
@@ -194,7 +202,7 @@ typedef struct _lv_global_t {
 #endif
 
 #if LV_USE_PROFILER && LV_USE_PROFILER_BUILTIN
-    struct _lv_profiler_builtin_ctx_t * profiler_context;
+    struct lv_profiler_builtin_ctx_t * profiler_context;
 #endif
 
 #if LV_USE_FILE_EXPLORER != 0
@@ -215,7 +223,7 @@ typedef struct _lv_global_t {
 #endif
 
 #if LV_USE_NUTTX
-    struct _lv_nuttx_ctx_t * nuttx_ctx;
+    struct lv_nuttx_ctx_t * nuttx_ctx;
 #endif
 
 #if LV_USE_OS != LV_OS_NONE

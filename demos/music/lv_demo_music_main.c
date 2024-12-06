@@ -13,7 +13,6 @@
 #include "assets/spectrum_1.h"
 #include "assets/spectrum_2.h"
 #include "assets/spectrum_3.h"
-#include "../../lvgl_private.h"
 
 /*********************
  *      DEFINES

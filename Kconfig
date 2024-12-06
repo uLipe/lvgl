@@ -1,4 +1,4 @@
-# Kconfig file for LVGL v9.3.0-dev
+# Kconfig file for LVGL v9.2.1
 
 menu "LVGL configuration"
 
@@ -163,14 +163,14 @@ menu "LVGL configuration"
 			default "stdint.h"
 			depends on LV_OS_CUSTOM
 
-		config LV_USE_FREERTOS_TASK_NOTIFY
-			bool "Use RTOS task with a direct notification for synchronization"
-			default y
-			depends on LV_OS_FREERTOS
-		help
-			Unblocking an RTOS task with a direct notification is 45% faster and uses less RAM
-			than unblocking a task using an intermediary object such as a binary semaphore.
-			RTOS task notifications can only be used when there is only one task that can be the recipient of the event.
+        config LV_USE_FREERTOS_TASK_NOTIFY
+            bool "Use RTOS task with a direct notification for synchronization"
+            default y
+            depends on LV_OS_FREERTOS
+        help
+            Unblocking an RTOS task with a direct notification is 45% faster and uses less RAM
+            than unblocking a task using an intermediary object such as a binary semaphore.
+            RTOS task notifications can only be used when there is only one task that can be the recipient of the event.
 	endmenu
 
 	menu "Rendering Configuration"
@@ -375,7 +375,7 @@ menu "LVGL configuration"
 		config LV_USE_PXP
 		bool "Use NXP's PXP on iMX RTxxx platforms"
 		default n
-
+		
 		config LV_USE_DRAW_PXP
 		bool "Use PXP for drawing"
 			depends on LV_USE_PXP
@@ -394,6 +394,19 @@ menu "LVGL configuration"
 		config LV_USE_PXP_ASSERT
 			bool "Enable PXP asserts"
 			depends on LV_USE_DRAW_PXP
+
+		config LV_USE_DRAW_G2D
+			bool "Use NXP's G2D on MPU platforms"
+			default n
+
+		config LV_USE_G2D_DRAW_THREAD
+			bool "Use additional draw thread for G2D processing"
+			depends on LV_USE_DRAW_G2D && LV_USE_OS > 0
+			default y
+
+		config LV_USE_G2D_ASSERT
+			bool "Enable G2D asserts"
+			depends on LV_USE_DRAW_G2D
 			default n
 
 		config LV_USE_DRAW_DAVE2D
@@ -456,31 +469,6 @@ menu "LVGL configuration"
 			select LV_USE_MATRIX
 			help
 				Enable drawing support vector graphic APIs.
-
-		config LV_USE_DRAW_DMA2D
-			bool "Use DMA2D on the supporting STM32 platforms"
-			default n
-			help
-				Accelerate blends, fills, image decoding, etc. with STM32 DMA2D.
-
-		config LV_DRAW_DMA2D_HAL_INCLUDE
-			string "the header file for LVGL to include for DMA2D"
-			default "stm32h7xx_hal.h"
-			depends on LV_USE_DRAW_DMA2D
-
-		config LV_USE_DRAW_DMA2D_INTERRUPT
-			bool "use the DMA2D transfer complete interrupt"
-			default n
-			depends on LV_USE_DRAW_DMA2D
-			help
-				if enabled, the user is required to call
-				`lv_draw_dma2d_transfer_complete_interrupt_handler`
-				upon receiving the DMA2D global interrupt
-
-		config LV_USE_DRAW_OPENGLES
-			bool "Draw using cached OpenGLES textures"
-			default n
-			depends on LV_USE_OPENGLES
 	endmenu
 
 	menu "Feature Configuration"
@@ -977,10 +965,6 @@ menu "LVGL configuration"
 			help
 				Minimum number of characters in a long word to put on a line after a break
 
-		config LV_TXT_COLOR_CMD
-			string "The control character to use for signalling text recoloring"
-			default "#"
-
 		config LV_USE_BIDI
 			bool "Support bidirectional texts"
 			help
@@ -1047,6 +1031,9 @@ menu "LVGL configuration"
 		config LV_USE_CANVAS
 			bool "Canvas. Requires: lv_image"
 			imply LV_USE_IMAGE
+			default y if !LV_CONF_MINIMAL
+		config LV_USE_CAROUSEL
+			bool "Carousel"
 			default y if !LV_CONF_MINIMAL
 		config LV_USE_CHART
 			bool "Chart"
@@ -1240,13 +1227,24 @@ menu "LVGL configuration"
 			int "Set an upper cased letter on which the drive will accessible (e.g. 65 for 'A')"
 			default 0
 			depends on LV_USE_FS_FATFS
-		config LV_FS_FATFS_PATH
-			string "Set the working directory"
-			depends on LV_USE_FS_FATFS
 		config LV_FS_FATFS_CACHE_SIZE
 			int ">0 to cache this number of bytes in lv_fs_read()"
 			default 0
 			depends on LV_USE_FS_FATFS
+
+		config LV_USE_FS_RAWFS
+			bool "File system on top of Raw binary"
+		config LV_FS_RAWFS_LETTER
+			int "Set an upper cased letter on which the drive will accessible (e.g. 65 for 'A')"
+			default 0
+			depends on LV_USE_FS_RAWFS
+		config LV_FS_RAWFS_XIP
+			bool "RAW binaries can be copied directly"
+			depends on LV_USE_FS_RAWFS
+		config LV_FS_RAWFS_XIP_BASE_ADDR
+			hex "Base address from where raw binaries can be copied directly"
+			default 0xFFFFFFFF
+			depends on LV_FS_RAWFS_XIP
 
 		config LV_USE_FS_MEMFS
 			bool "File system on top of memory-mapped API"
@@ -1261,9 +1259,6 @@ menu "LVGL configuration"
 			int "Set an upper cased letter on which the drive will accessible (e.g. 65 for 'A')"
 			default 0
 			depends on LV_USE_FS_LITTLEFS
-		config LV_FS_LITTLEFS_PATH
-			string "Set the working directory"
-			depends on LV_USE_FS_LITTLEFS
 
 		config LV_USE_FS_ARDUINO_ESP_LITTLEFS
 			bool "File system on top of Arduino ESP littlefs API"
@@ -1271,18 +1266,12 @@ menu "LVGL configuration"
 			int "Set an upper cased letter on which the drive will accessible (e.g. 65 for 'A')"
 			default 0
 			depends on LV_USE_FS_ARDUINO_ESP_LITTLEFS
-		config LV_FS_ARDUINO_ESP_LITTLEFS_PATH
-			string "Set the working directory"
-			depends on LV_USE_FS_ARDUINO_ESP_LITTLEFS
 
 		config LV_USE_FS_ARDUINO_SD
 			bool "File system on top of Arduino SD API"
 		config LV_FS_ARDUINO_SD_LETTER
 			int "Set an upper cased letter on which the drive will accessible (e.g. 65 for 'A')"
 			default 0
-			depends on LV_USE_FS_ARDUINO_SD
-		config LV_FS_ARDUINO_SD_PATH
-			string "Set the working directory"
 			depends on LV_USE_FS_ARDUINO_SD
 
 		config LV_USE_LODEPNG
@@ -1310,14 +1299,6 @@ menu "LVGL configuration"
 		config LV_BIN_DECODER_RAM_LOAD
 			bool "Decode whole image to RAM for bin decoder"
 			default n
-
-		config LV_USE_SVG
-			bool "SVG library"
-			depends on LV_USE_VECTOR_GRAPHIC
-
-		config LV_USE_SVG_ANIMATION
-			bool "SVG animation"
-			depends on LV_USE_SVG
 
 		config LV_USE_RLE
 			bool "LVGL's version of RLE compression method"
@@ -1384,13 +1365,6 @@ menu "LVGL configuration"
 			bool "Dump format"
 			depends on LV_USE_FFMPEG
 			default n
-		config LV_FFMPEG_PLAYER_USE_LV_FS
-			bool "Use lvgl file path in FFmpeg Player widget"
-			depends on LV_USE_FFMPEG
-			default n
-			help
-				You won't be able to open URLs after enabling this feature.
-				Note that FFmpeg image decoder will always use lvgl file system.
 	endmenu
 
 	menu "Others"
@@ -1466,13 +1440,11 @@ menu "LVGL configuration"
 				bool "Center"
 		endchoice
 
-		menuconfig LV_USE_PROFILER
+		config LV_USE_PROFILER
 			bool "Runtime performance profiler"
-
-		if LV_USE_PROFILER
-
 		config LV_USE_PROFILER_BUILTIN
 			bool "Enable the built-in profiler"
+			depends on LV_USE_PROFILER
 			default y
 		config LV_PROFILER_BUILTIN_BUF_SIZE
 			int "Default profiler trace buffer size in bytes"
@@ -1480,49 +1452,8 @@ menu "LVGL configuration"
 			default 16384
 		config LV_PROFILER_INCLUDE
 			string "Header to include for the profiler"
+			depends on LV_USE_PROFILER
 			default "lvgl/src/misc/lv_profiler_builtin.h"
-
-		config LV_PROFILER_LAYOUT
-			bool "Enable layout profiler"
-			default y
-
-		config LV_PROFILER_REFR
-			bool "Enable disp refr profiler"
-			default y
-
-		config LV_PROFILER_DRAW
-			bool "Enable draw profiler"
-			default y
-
-		config LV_PROFILER_INDEV
-			bool "Enable indev profiler"
-			default y
-
-		config LV_PROFILER_DECODER
-			bool "Enable decoder profiler"
-			default y
-
-		config LV_PROFILER_FONT
-			bool "Enable font profiler"
-			default y
-
-		config LV_PROFILER_FS
-			bool "Enable fs profiler"
-			default y
-
-		config LV_PROFILER_STYLE
-			bool "Enable style profiler"
-			default n
-
-		config LV_PROFILER_TIMER
-			bool "Enable timer profiler"
-			default y
-
-		config LV_PROFILER_CACHE
-			bool "Enable cache profiler"
-			default y
-
-		endif # LV_USE_PROFILER
 
 		config LV_USE_MONKEY
 			bool "Enable Monkey test"
@@ -1583,25 +1514,15 @@ menu "LVGL configuration"
 			help
 				This can save some memory, but not much. After the quick access bar is created, it can be hidden by clicking the button at the top left corner of the browsing area, which is very useful for small screen devices.
 
-		config LV_USE_FONT_MANAGER
-			bool "Enable freetype font manager"
-			depends on LV_USE_FREETYPE
-			default n
-		config LV_FONT_MANAGER_NAME_MAX_LEN
-			int "Font manager name max length"
-			depends on LV_USE_FONT_MANAGER
-			default 32
-		config LV_USE_XML
-			bool "Enable loading XML UIs runtime"
 		config LVGL_VERSION_MAJOR
 			int
 			default 9 # LVGL_VERSION_MAJOR
 		config LVGL_VERSION_MINOR
 			int
-			default 3 # LVGL_VERSION_MINOR
+			default 2 # LVGL_VERSION_MINOR
 		config LVGL_VERSION_PATCH
 			int
-			default 0 # LVGL_VERSION_PATCH
+			default 1 # LVGL_VERSION_PATCH
 	endmenu
 
 	menu "Devices"
@@ -1796,11 +1717,6 @@ menu "LVGL configuration"
 			bool "Use Nuttx to open window and handle touchscreen"
 			default n
 
-		config LV_USE_NUTTX_INDEPENDENT_IMAGE_HEAP
-			bool "Use independent image heap"
-			depends on LV_USE_NUTTX
-			default n
-
 		config LV_USE_NUTTX_LIBUV
 			bool "Use uv loop to replace default timer loop and other fb/indev timers"
 			depends on LV_USE_NUTTX
@@ -1848,13 +1764,6 @@ menu "LVGL configuration"
 			bool "Use NuttX touchscreen driver"
 			depends on LV_USE_NUTTX
 			default n
-
-		config LV_NUTTX_TOUCHSCREEN_CURSOR_SIZE
-			int "Touchscreen cursor size in pixels"
-			depends on LV_USE_NUTTX_TOUCHSCREEN
-			default 0
-			help
-				Set to 0 to disable cursor, or set to a value greater than 0 to set the cursor size in pixels.
 
 		config LV_USE_LINUX_DRM
 			bool "Use Linux DRM device"
@@ -1906,15 +1815,6 @@ menu "LVGL configuration"
 			bool "Use Renesas GLCDC driver"
 			default n
 
-		config LV_USE_ST_LTDC
-			bool "Driver for ST LTDC"
-			default n
-
-		config LV_ST_LTDC_USE_DMA2D_FLUSH
-			bool "Only used for created partial mode LTDC displays"
-			default n
-			depends on LV_USE_ST_LTDC && !LV_USE_DRAW_DMA2D
-
 		config LV_USE_WINDOWS
 			bool "Use LVGL Windows backend"
 			depends on LV_OS_WINDOWS
@@ -1957,11 +1857,7 @@ menu "LVGL configuration"
 		config LV_USE_DEMO_BENCHMARK
 			bool "Benchmark your system"
 			default n
-			select LV_FONT_MONTSERRAT_14
-			select LV_FONT_MONTSERRAT_20
-			select LV_FONT_MONTSERRAT_24
-			select LV_FONT_MONTSERRAT_26
-			select LV_USE_DEMO_WIDGETS
+			depends on LV_FONT_MONTSERRAT_14 && LV_FONT_MONTSERRAT_24 && LV_USE_DEMO_WIDGETS
 		config LV_USE_DEMO_RENDER
 			bool "Render test for each primitives. Requires at least 480x272 display"
 			default n

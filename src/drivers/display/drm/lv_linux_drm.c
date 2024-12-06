@@ -22,8 +22,6 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
-#include "../../../stdlib/lv_sprintf.h"
-
 /*********************
  *      DEFINES
  *********************/

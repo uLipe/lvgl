@@ -9,7 +9,6 @@
 #include "../../lv_examples.h"
 
 #if LV_BUILD_EXAMPLES
-#include "../../../lvgl_private.h"
 
 /*********************
  *      DEFINES

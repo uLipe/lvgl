@@ -6,11 +6,10 @@
 /*********************
  *      INCLUDES
  *********************/
+#include "../../misc/lv_timer_private.h"
+#include "../../core/lv_obj_class_private.h"
 #include "lv_gif_private.h"
 #if LV_USE_GIF
-#include "../../misc/lv_timer_private.h"
-#include "../../misc/cache/lv_image_cache.h"
-#include "../../core/lv_obj_class_private.h"
 
 #include "gifdec.h"
 

@@ -52,7 +52,7 @@ void lv_draw_vg_lite_mask_rect(lv_draw_unit_t * draw_unit, const lv_draw_mask_re
         return;
     }
 
-    LV_PROFILER_DRAW_BEGIN;
+    LV_PROFILER_BEGIN;
 
 #if LV_USE_VG_LITE_THORVG
     /**
@@ -104,7 +104,8 @@ void lv_draw_vg_lite_mask_rect(lv_draw_unit_t * draw_unit, const lv_draw_mask_re
     int32_t h = lv_area_get_height(&dsc->area);
 
     lv_vg_lite_path_t * path = lv_vg_lite_path_get(u, VG_LITE_FP32);
-    lv_vg_lite_path_set_bounding_box_area(path, &draw_area);
+    lv_vg_lite_path_set_quality(path, VG_LITE_HIGH);
+    lv_vg_lite_path_set_bonding_box_area(path, &draw_area);
 
     /* Use rounded rectangles and normal rectangles of the same size to nest the cropped area */
     lv_vg_lite_path_append_rect(path, dsc->area.x1, dsc->area.y1, w, h, dsc->radius);
@@ -120,7 +121,7 @@ void lv_draw_vg_lite_mask_rect(lv_draw_unit_t * draw_unit, const lv_draw_mask_re
     LV_VG_LITE_ASSERT_MATRIX(&matrix);
 
     /* Use VG_LITE_BLEND_DST_IN (Sa * D) blending mode to make the corners transparent */
-    LV_PROFILER_DRAW_BEGIN_TAG("vg_lite_draw");
+    LV_PROFILER_BEGIN_TAG("vg_lite_draw");
     LV_VG_LITE_CHECK_ERROR(vg_lite_draw(
                                &u->target_buffer,
                                vg_lite_path,
@@ -128,12 +129,12 @@ void lv_draw_vg_lite_mask_rect(lv_draw_unit_t * draw_unit, const lv_draw_mask_re
                                &matrix,
                                VG_LITE_BLEND_DST_IN,
                                0));
-    LV_PROFILER_DRAW_END_TAG("vg_lite_draw");
+    LV_PROFILER_END_TAG("vg_lite_draw");
 
     lv_vg_lite_path_drop(u, path);
 #endif /*LV_USE_VG_LITE_THORVG*/
 
-    LV_PROFILER_DRAW_END;
+    LV_PROFILER_END;
 }
 
 /**********************

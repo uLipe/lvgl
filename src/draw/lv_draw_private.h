@@ -19,8 +19,6 @@ extern "C" {
  *********************/
 
 #include "lv_draw.h"
-#include "../osal/lv_os.h"
-#include "../misc/cache/lv_cache.h"
 
 /*********************
  *      DEFINES
@@ -30,7 +28,7 @@ extern "C" {
  *      TYPEDEFS
  **********************/
 
-struct _lv_draw_task_t {
+struct lv_draw_task_t {
     lv_draw_task_t * next;
 
     lv_draw_task_type_t type;
@@ -79,11 +77,11 @@ struct _lv_draw_task_t {
 
 };
 
-struct _lv_draw_mask_t {
+struct lv_draw_mask_t {
     void * user_data;
 };
 
-struct _lv_draw_unit_t {
+struct lv_draw_unit_t {
     lv_draw_unit_t * next;
 
     /**
@@ -92,11 +90,6 @@ struct _lv_draw_unit_t {
     lv_layer_t * target_layer;
 
     const lv_area_t * clip_area;
-
-    /**
-     * Name of the draw unit, for debugging purposes only.
-     */
-    const char * name;
 
     /**
      * Called to try to assign a draw task to itself.
@@ -182,7 +175,7 @@ typedef struct {
 #if LV_USE_OS
     lv_thread_sync_t sync;
 #else
-    volatile int dispatch_req;
+    int dispatch_req;
 #endif
     lv_mutex_t circle_cache_mutex;
     bool task_running;

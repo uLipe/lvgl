@@ -70,12 +70,9 @@ void lv_draw_layer(lv_layer_t * layer, const lv_draw_image_dsc_t * dsc, const lv
         return;
     }
 
-    LV_PROFILER_DRAW_BEGIN;
-
     lv_draw_task_t * t = lv_draw_add_task(layer, coords);
 
     t->draw_dsc = lv_malloc(sizeof(*dsc));
-    LV_ASSERT_MALLOC(t->draw_dsc);
     lv_memcpy(t->draw_dsc, dsc, sizeof(*dsc));
     t->type = LV_DRAW_TASK_TYPE_LAYER;
     t->state = LV_DRAW_TASK_STATE_WAITING;
@@ -88,8 +85,6 @@ void lv_draw_layer(lv_layer_t * layer, const lv_draw_image_dsc_t * dsc, const lv
     layer_to_draw->all_tasks_added = true;
 
     lv_draw_finalize_task_creation(layer, t);
-
-    LV_PROFILER_DRAW_END;
 }
 
 void lv_draw_image(lv_layer_t * layer, const lv_draw_image_dsc_t * dsc, const lv_area_t * coords)
@@ -105,16 +100,14 @@ void lv_draw_image(lv_layer_t * layer, const lv_draw_image_dsc_t * dsc, const lv
         return;
     }
 
-    LV_PROFILER_DRAW_BEGIN;
+    LV_PROFILER_BEGIN;
 
     lv_draw_image_dsc_t * new_image_dsc = lv_malloc(sizeof(*dsc));
-    LV_ASSERT_MALLOC(new_image_dsc);
     lv_memcpy(new_image_dsc, dsc, sizeof(*dsc));
     lv_result_t res = lv_image_decoder_get_info(new_image_dsc->src, &new_image_dsc->header);
     if(res != LV_RESULT_OK) {
         LV_LOG_WARN("Couldn't get info about the image");
         lv_free(new_image_dsc);
-        LV_PROFILER_DRAW_END;
         return;
     }
 
@@ -127,7 +120,7 @@ void lv_draw_image(lv_layer_t * layer, const lv_draw_image_dsc_t * dsc, const lv
     lv_area_move(&t->_real_area, coords->x1, coords->y1);
 
     lv_draw_finalize_task_creation(layer, t);
-    LV_PROFILER_DRAW_END;
+    LV_PROFILER_END;
 }
 
 lv_image_src_t lv_image_src_get_type(const void * src)

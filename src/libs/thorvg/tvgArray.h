@@ -62,7 +62,7 @@ struct Array
         data[count++] = element;
     }
 
-    void push(const Array<T>& rhs)
+    void push(Array<T>& rhs)
     {
         if (rhs.count == 0) return;
         grow(rhs.count);

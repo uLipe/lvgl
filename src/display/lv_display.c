@@ -77,13 +77,6 @@ lv_display_t * lv_display_create(int32_t hor_res, int32_t ver_res)
     disp->dpi              = LV_DPI_DEF;
     disp->color_format = LV_COLOR_FORMAT_NATIVE;
 
-
-#if defined(LV_DRAW_SW_DRAW_UNIT_CNT) && (LV_DRAW_SW_DRAW_UNIT_CNT != 0)
-    disp->tile_cnt = LV_DRAW_SW_DRAW_UNIT_CNT;
-#else
-    disp->tile_cnt = 1;
-#endif
-
     disp->layer_head = lv_malloc_zeroed(sizeof(lv_layer_t));
     LV_ASSERT_MALLOC(disp->layer_head);
     if(disp->layer_head == NULL) return NULL;
@@ -520,24 +513,6 @@ lv_color_format_t lv_display_get_color_format(lv_display_t * disp)
     return disp->color_format;
 }
 
-void lv_display_set_tile_cnt(lv_display_t * disp, uint32_t tile_cnt)
-{
-    LV_ASSERT_FORMAT_MSG(tile_cnt < 256, "tile_cnt must be smaller than 256 (%" LV_PRId32 " was used)", tile_cnt);
-
-    if(disp == NULL) disp = lv_display_get_default();
-    if(disp == NULL) return;
-
-    disp->tile_cnt = tile_cnt;
-}
-
-uint32_t lv_display_get_tile_cnt(lv_display_t * disp)
-{
-    if(disp == NULL) disp = lv_display_get_default();
-    if(disp == NULL) return 0;
-
-    return disp->tile_cnt;
-}
-
 void lv_display_set_antialiasing(lv_display_t * disp, bool en)
 {
     if(disp == NULL) disp = lv_display_get_default();
@@ -628,7 +603,7 @@ lv_obj_t * lv_display_get_layer_bottom(lv_display_t * disp)
     return disp->bottom_layer;
 }
 
-void lv_screen_load(struct _lv_obj_t * scr)
+void lv_screen_load(struct lv_obj_t * scr)
 {
     lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
 }
@@ -844,17 +819,6 @@ lv_result_t lv_display_send_event(lv_display_t * disp, lv_event_code_t code, voi
     if(res != LV_RESULT_OK) return res;
 
     return res;
-}
-
-lv_area_t * lv_event_get_invalidated_area(lv_event_t * e)
-{
-    if(e->code == LV_EVENT_INVALIDATE_AREA) {
-        return lv_event_get_param(e);
-    }
-    else {
-        LV_LOG_WARN("Not interpreted with this event code");
-        return NULL;
-    }
 }
 
 void lv_display_set_rotation(lv_display_t * disp, lv_display_rotation_t rotation)

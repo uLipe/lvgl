@@ -59,10 +59,6 @@ extern "C" {
 #include "render/lv_demo_render.h"
 #endif
 
-#if LV_USE_DEMO_EBIKE
-#include "ebike/lv_demo_ebike.h"
-#endif
-
 /*********************
  *      DEFINES
  *********************/

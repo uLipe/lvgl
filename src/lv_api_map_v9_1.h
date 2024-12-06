@@ -36,9 +36,14 @@ extern "C" {
  **********************/
 
 #define _LV_EVENT_LAST  LV_EVENT_LAST
+#define _lv_obj_t   lv_obj_t
+#define _lv_obj_class_t lv_obj_class_t
+#define _lv_event_t lv_event_t
 #define _lv_event_code_t lv_event_code_t
 #define _lv_event_mark_deleted lv_event_mark_deleted
 #define lv_obj_add_event lv_obj_add_event_cb
+
+#define _lv_anim_t lv_anim_t
 
 #define _LV_STYLE_LAST_BUILT_IN_PROP LV_STYLE_LAST_BUILT_IN_PROP
 #define _LV_FLEX_REVERSE LV_FLEX_REVERSE
@@ -73,19 +78,14 @@ extern "C" {
 #define _lv_obj_get_ext_draw_size lv_obj_get_ext_draw_size
 #define _lv_indev_scroll_handler lv_indev_scroll_handler
 
+#define _lv_display_t lv_display_t
 #define _lv_display_refr_timer lv_disp_refr_timer
 #define _lv_disp_refr_timer lv_disp_refr_timer
 #define _lv_disp_get_refr_timer lv_disp_get_refr_timer
 
-#define _lv_inv_area lv_inv_area
-#define lv_chart_set_all_value lv_chart_set_all_values
-#define lv_calendar_set_showed_date lv_calendar_set_month_shown
+#define _lv_timer_t lv_timer_t
 
-#define LV_LABEL_LONG_WRAP             LV_LABEL_LONG_MODE_WRAP
-#define LV_LABEL_LONG_DOT              LV_LABEL_LONG_MODE_DOTS
-#define LV_LABEL_LONG_SCROLL           LV_LABEL_LONG_MODE_SCROLL
-#define LV_LABEL_LONG_SCROLL_CIRCULAR  LV_LABEL_LONG_MODE_SCROLL_CIRCULAR
-#define LV_LABEL_LONG_CLIP             LV_LABEL_LONG_MODE_CLIP
+#define _lv_inv_area lv_inv_area
 
 /**********************
  * DEPRECATED FUNCTIONS
@@ -95,4 +95,4 @@ extern "C" {
 } /*extern "C"*/
 #endif
 
-#endif /* LV_API_MAP_V9_1_H */
+#endif /*LV_API_MAP_V9_0_H*/

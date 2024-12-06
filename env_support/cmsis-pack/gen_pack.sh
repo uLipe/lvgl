@@ -44,7 +44,6 @@ PACK_BUILD=build/
 # alternative: specify directory names to be added to pack base directory
 PACK_DIRS="
   ../../src
-  ../../libs
   ../../demos
   ../../env_support/pikascript
 "

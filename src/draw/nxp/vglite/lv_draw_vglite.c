@@ -115,10 +115,9 @@ void lv_draw_vglite_init(void)
     draw_vglite_unit->base_unit.wait_for_finish_cb = _vglite_wait_for_finish;
 #endif
     draw_vglite_unit->base_unit.delete_cb = _vglite_delete;
-    draw_vglite_unit->base_unit.name = "NXP_VGLITE";
 
 #if LV_USE_VGLITE_DRAW_THREAD
-    lv_thread_init(&draw_vglite_unit->thread, LV_THREAD_PRIO_HIGH, _vglite_render_thread_cb, 2 * 1024, draw_vglite_unit);
+    lv_thread_init(&draw_vglite_unit->thread, LV_THREAD_PRIO_HIGH, _vglite_render_thread_cb, 3 * 1024, draw_vglite_unit);
 #endif
 }
 
@@ -252,10 +251,10 @@ static int32_t _vglite_evaluate(lv_draw_unit_t * u, lv_draw_task_t * t)
                 lv_draw_image_dsc_t * draw_dsc = (lv_draw_image_dsc_t *) t->draw_dsc;
                 const lv_image_dsc_t * img_dsc = draw_dsc->src;
 
-                if(img_dsc->header.cf >= LV_COLOR_FORMAT_PROPRIETARY_START) {
+#if CHIPID == 0x255
+                if(draw_dsc->tile)
                     return 0;
-                }
-
+#endif
 #if LV_USE_VGLITE_BLIT_SPLIT
                 bool has_transform = (draw_dsc->rotation != 0 || draw_dsc->scale_x != LV_SCALE_NONE ||
                                       draw_dsc->scale_y != LV_SCALE_NONE);
