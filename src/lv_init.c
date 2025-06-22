@@ -49,7 +49,7 @@
     #include "draw/nema_gfx/lv_draw_nema_gfx.h"
 #endif
 #if LV_USE_DRAW_VGLITE
-    #include "draw/nxp/vglite/lv_draw_vglite.h"
+    #include "draw/vglite/lv_draw_vglite.h"
 #endif
 #if LV_USE_PXP
     #if LV_USE_DRAW_PXP || LV_USE_ROTATE_PXP
@@ -65,14 +65,14 @@
 #if LV_USE_DRAW_SDL
     #include "draw/sdl/lv_draw_sdl.h"
 #endif
-#if LV_USE_DRAW_VG_LITE
-    #include "draw/vg_lite/lv_draw_vg_lite.h"
-#endif
 #if LV_USE_DRAW_DMA2D
     #include "draw/dma2d/lv_draw_dma2d.h"
 #endif
 #if LV_USE_DRAW_OPENGLES
     #include "draw/opengles/lv_draw_opengles.h"
+#endif
+#if LV_USE_PPA
+    #include "draw/espressif/ppa/lv_draw_ppa.h"
 #endif
 #if LV_USE_WINDOWS
     #include "drivers/windows/lv_windows_context.h"
@@ -230,10 +230,6 @@ void lv_init(void)
     lv_draw_nema_gfx_init();
 #endif
 
-#if LV_USE_DRAW_VGLITE
-    lv_draw_vglite_init();
-#endif
-
 #if LV_USE_PXP
 #if LV_USE_DRAW_PXP || LV_USE_ROTATE_PXP
     lv_draw_pxp_init();
@@ -260,6 +256,10 @@ void lv_init(void)
     lv_draw_opengles_init();
 #endif
 
+#if LV_USE_PPA
+    lv_draw_ppa_init();
+#endif
+
 #if LV_USE_WINDOWS
     lv_windows_platform_init();
 #endif
@@ -280,8 +280,11 @@ void lv_init(void)
     lv_image_decoder_init(LV_CACHE_DEF_SIZE, LV_IMAGE_HEADER_CACHE_DEF_CNT);
     lv_bin_decoder_init();  /*LVGL built-in binary image decoder*/
 
-#if LV_USE_DRAW_VG_LITE
-    lv_draw_vg_lite_init();
+    /* VGLite draw unit supports image decode, so we need to initialize it after the
+     * the LVGL built-in image decoder has been initialized
+     */
+#if LV_USE_DRAW_VGLITE
+    lv_draw_vglite_init();
 #endif
 
     /*Test if the IDE has UTF-8 encoding*/
@@ -463,10 +466,6 @@ void lv_deinit(void)
     lv_draw_g2d_deinit();
 #endif
 
-#if LV_USE_DRAW_VG_LITE
-    lv_draw_vg_lite_deinit();
-#endif
-
 #if LV_USE_DRAW_DMA2D
     lv_draw_dma2d_deinit();
 #endif
@@ -497,6 +496,10 @@ void lv_deinit(void)
 
 #if LV_USE_OBJ_ID && LV_USE_OBJ_ID_BUILTIN
     lv_objid_builtin_destroy();
+#endif
+
+#if LV_USE_XML
+    lv_xml_test_unregister();
 #endif
 
     lv_mem_deinit();

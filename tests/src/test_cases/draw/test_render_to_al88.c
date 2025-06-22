@@ -18,7 +18,7 @@ void tearDown(void)
 
 void test_render_to_al88(void)
 {
-#if LV_USE_DRAW_VG_LITE
+#if LV_USE_DRAW_VGLITE
     TEST_PASS();
 #else
     lv_display_set_color_format(NULL, LV_COLOR_FORMAT_AL88);
@@ -31,8 +31,8 @@ void test_render_to_al88(void)
 
             /*Skip test with transformed indexed images if they are not loaded to RAM*/
             if(LV_BIN_DECODER_RAM_LOAD == 0 &&
-               (i == LV_DEMO_RENDER_SCENE_IMAGE_NORMAL_2 ||
-                i == LV_DEMO_RENDER_SCENE_IMAGE_RECOLOR_2)) continue;
+               (i == LV_DEMO_RENDER_SCENE_IMAGE_NORMAL_3 ||
+                i == LV_DEMO_RENDER_SCENE_IMAGE_RECOLOR_3)) continue;
 
             lv_demo_render(i, opa_values[opa]);
 

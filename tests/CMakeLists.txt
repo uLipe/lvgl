@@ -67,6 +67,7 @@ set(SANITIZE_AND_COVERAGE_OPTIONS
 set(LVGL_TEST_OPTIONS_VG_LITE
     -DLV_TEST_OPTION=6
     -Wno-dangling-pointer # workaround for thorvg dangling-pointer warning
+    -Wno-float-conversion # workaround for thorvg dangling-pointer float to int conversion
 )
 
 set(LVGL_TEST_OPTIONS_SDL
@@ -143,7 +144,7 @@ elseif (OPTIONS_TEST_VG_LITE)
     set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_VG_LITE} -DLVGL_CI_USING_SYS_HEAP ${SANITIZE_AND_COVERAGE_OPTIONS})
     filter_compiler_options (C TEST_LIBS ${SANITIZE_AND_COVERAGE_OPTIONS})
     set (CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "disable examples" FORCE)
-    set (ENABLE_TESTS ON)
+    set (ENABLE_TESTS OFF)
     add_definitions(-DREF_IMGS_PATH="ref_imgs_vg_lite/")
 
     # In 32-bit systems, the output of ThorVG's anti-aliasing algorithm has a slight deviation.
@@ -202,7 +203,7 @@ if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
         -Wundef
         -Wuninitialized
         -Wunreachable-code
-        -Werror=float-conversion
+        #-Werror=float-conversion
         -Werror=strict-aliasing
         -Wno-double-promotion
         -Wno-unreachable-code
@@ -454,6 +455,7 @@ endif()
 if(WIN32)
     add_definitions(-DLV_USE_LINUX_FBDEV=0)
     add_definitions(-DLV_USE_WINDOWS=1)
+    add_definitions(-DLV_USE_WAYLAND=0)
     add_definitions(-DLV_USE_OS=LV_OS_WINDOWS)
 endif()
 

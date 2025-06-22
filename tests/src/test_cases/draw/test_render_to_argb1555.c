@@ -22,7 +22,7 @@ void test_render_to_argb1555(void)
      * The deviation will be amplified when using lower precision color formats.
      * Only 64-bit platforms are tested here.
      */
-#if LV_USE_DRAW_VG_LITE && LV_USE_SNAPSHOT && !defined(NON_AMD64_BUILD)
+#if LV_USE_DRAW_VGLITE && LV_USE_SNAPSHOT && !defined(NON_AMD64_BUILD)
 
     lv_opa_t opa_values[2] = {0xff, 0x80};
     uint32_t opa;
@@ -32,8 +32,8 @@ void test_render_to_argb1555(void)
 
             /*Skip test with transformed indexed images if they are not loaded to RAM*/
             if(LV_BIN_DECODER_RAM_LOAD == 0 &&
-               (i == LV_DEMO_RENDER_SCENE_IMAGE_NORMAL_2 ||
-                i == LV_DEMO_RENDER_SCENE_IMAGE_RECOLOR_2)) continue;
+               (i == LV_DEMO_RENDER_SCENE_IMAGE_NORMAL_3 ||
+                i == LV_DEMO_RENDER_SCENE_IMAGE_RECOLOR_3)) continue;
 
             lv_demo_render(i, opa_values[opa]);
             lv_draw_buf_t * draw_buf = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_ARGB1555);
