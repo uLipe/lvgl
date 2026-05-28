@@ -431,6 +431,10 @@
     #define LV_USE_PPA_LINE              0
     #define LV_USE_PPA_TRIANGLE          0
 
+    /** Phase 4 runtime tuning + telemetry. */
+    #define LV_USE_PPA_RUNTIME_TUNING    0
+    #define LV_USE_PPA_STATS             0
+
     #define LV_PPA_BURST_LENGTH    128
 
     /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */

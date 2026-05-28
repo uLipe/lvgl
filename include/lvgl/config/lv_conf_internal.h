@@ -1270,6 +1270,22 @@
         #endif
     #endif
 
+    /** Phase 4 runtime tuning + telemetry. */
+    #ifndef LV_USE_PPA_RUNTIME_TUNING
+        #ifdef CONFIG_LV_USE_PPA_RUNTIME_TUNING
+            #define LV_USE_PPA_RUNTIME_TUNING CONFIG_LV_USE_PPA_RUNTIME_TUNING
+        #else
+            #define LV_USE_PPA_RUNTIME_TUNING    0
+        #endif
+    #endif
+    #ifndef LV_USE_PPA_STATS
+        #ifdef CONFIG_LV_USE_PPA_STATS
+            #define LV_USE_PPA_STATS CONFIG_LV_USE_PPA_STATS
+        #else
+            #define LV_USE_PPA_STATS             0
+        #endif
+    #endif
+
     #ifndef LV_PPA_BURST_LENGTH
         #ifdef CONFIG_LV_PPA_BURST_LENGTH
             #define LV_PPA_BURST_LENGTH CONFIG_LV_PPA_BURST_LENGTH

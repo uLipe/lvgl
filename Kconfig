@@ -748,6 +748,26 @@ menu "LVGL configuration"
 			right triangle aligned to the screen axes (two vertices share x or y).
 			Each scanline of the triangle becomes one PPA fill.
 
+		config LV_USE_PPA_RUNTIME_TUNING
+		bool "Expose runtime API to retune PPA client burst length and queue depth"
+		default n
+		depends on LV_USE_PPA
+		help
+			Compile and export `lv_draw_ppa_set_burst_length` and
+			`lv_draw_ppa_set_pending_trans`. Both functions must be called from the
+			LVGL dispatch context (e.g. while holding the LVGL lock) because they
+			drain the active draw unit and re-register the affected PPA client.
+
+		config LV_USE_PPA_STATS
+		bool "Maintain per-frame statistics for the PPA draw unit"
+		default n
+		depends on LV_USE_PPA
+		help
+			Track totals (tasks, sub-ops, enqueue failures), the peak in-flight
+			sub-op count and the cumulative wait time spent in `wait_for_finish_cb`.
+			Enabled telemetry adds atomic counters in the hot path; keep it off in
+			production unless you are profiling.
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n

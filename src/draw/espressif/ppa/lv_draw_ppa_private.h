@@ -84,7 +84,35 @@ typedef struct lv_draw_ppa_unit {
      * pass that consumes it is still pending in the PPA queue. */
     lv_draw_ppa_tile_t * pending_tile;
 #endif
+#if LV_USE_PPA_RUNTIME_TUNING
+    /* Cached client config so runtime retune calls preserve the unchanged
+     * fields when re-registering a client. */
+    ppa_client_config_t client_cfg[3];
+#endif
+#if LV_USE_PPA_STATS
+    /* Counters live in the unit so the stats API does not need a separate
+     * shadow object. They are updated atomically because the ISR completion
+     * callback also bumps total_ops/failed_ops. */
+    atomic_uint stat_total_tasks;
+    atomic_uint stat_total_ops;
+    atomic_uint stat_failed_ops;
+    atomic_uint stat_max_pending;
+    atomic_ullong stat_total_wait_us;
+#endif
 } lv_draw_ppa_unit_t;
+
+#if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
+/* Single-instance pointer so the runtime/stats APIs can reach the draw unit
+ * without going through the LVGL draw scheduler. The pointer is set by
+ * lv_draw_ppa_init and cleared by ppa_delete. */
+extern lv_draw_ppa_unit_t * lv_draw_ppa_unit_instance;
+#endif
+
+#if LV_USE_PPA_ASYNC
+/* Shared ISR completion callback. Exposed so the runtime tuning module can
+ * re-register it on the new client handle after a re-registration. */
+bool lv_draw_ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt, void * user_data);
+#endif
 
 #if LV_USE_PPA_TILE_COMPOSER
 /* Pool lifecycle and acquire/release API. The pool is always sized to
@@ -231,9 +259,24 @@ static inline ppa_srm_color_mode_t lv_color_format_to_ppa_srm(lv_color_format_t 
 static inline void lv_draw_ppa_begin_op(lv_draw_ppa_unit_t * u)
 {
 #if LV_USE_PPA_ASYNC
-    atomic_fetch_add(&u->pending_ops, 1);
+    int prev = atomic_fetch_add(&u->pending_ops, 1);
+    (void)prev;
+#if LV_USE_PPA_STATS
+    /* Track the peak in-flight count and total ops submitted for telemetry.
+     * The CAS loop keeps `stat_max_pending` non-decreasing under ISR + task
+     * concurrency. */
+    atomic_fetch_add(&u->stat_total_ops, 1u);
+    unsigned new_pending = (unsigned)(prev + 1);
+    unsigned cur_max = atomic_load(&u->stat_max_pending);
+    while(new_pending > cur_max) {
+        if(atomic_compare_exchange_weak(&u->stat_max_pending, &cur_max, new_pending)) break;
+    }
+#endif
 #else
     LV_UNUSED(u);
+#if LV_USE_PPA_STATS
+    atomic_fetch_add(&u->stat_total_ops, 1u);
+#endif
 #endif
 }
 
@@ -243,6 +286,9 @@ static inline void lv_draw_ppa_cancel_op(lv_draw_ppa_unit_t * u)
     atomic_fetch_sub(&u->pending_ops, 1);
 #else
     LV_UNUSED(u);
+#endif
+#if LV_USE_PPA_STATS
+    atomic_fetch_add(&u->stat_failed_ops, 1u);
 #endif
 }
 

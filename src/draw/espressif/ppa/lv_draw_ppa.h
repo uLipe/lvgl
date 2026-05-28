@@ -22,6 +22,10 @@ extern "C" {
 #include "../../../display/lv_display_private.h"
 #include "../../../misc/lv_area_private.h"
 
+#if LV_USE_PPA_RUNTIME_TUNING
+#include <esp_err.h>
+#endif
+
 /*********************
  *      DEFINES
  *********************/
@@ -72,6 +76,58 @@ void lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_line_dsc_t * dsc);
 
 #if LV_USE_PPA_TRIANGLE
 void lv_draw_ppa_triangle(lv_draw_task_t * t, const lv_draw_triangle_dsc_t * dsc);
+#endif
+
+#if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
+typedef enum {
+    LV_DRAW_PPA_CLIENT_FILL = 0,
+    LV_DRAW_PPA_CLIENT_BLEND,
+    LV_DRAW_PPA_CLIENT_SRM,
+    LV_DRAW_PPA_CLIENT_COUNT,
+} lv_draw_ppa_client_kind_t;
+#endif
+
+#if LV_USE_PPA_RUNTIME_TUNING
+typedef enum {
+    LV_DRAW_PPA_BURST_8 = 0,
+    LV_DRAW_PPA_BURST_16,
+    LV_DRAW_PPA_BURST_32,
+    LV_DRAW_PPA_BURST_64,
+    LV_DRAW_PPA_BURST_128,
+} lv_draw_ppa_burst_kind_t;
+
+/**
+ * Update the data burst length of one PPA client at runtime. Must be called
+ * from the LVGL dispatch context (or with the LVGL lock held) because the
+ * underlying client is unregistered and re-registered with the new
+ * configuration. Pending sub-operations on the affected client are drained
+ * before the change takes effect.
+ *
+ * @return ESP_OK on success.
+ */
+esp_err_t lv_draw_ppa_set_burst_length(lv_draw_ppa_client_kind_t client,
+                                       lv_draw_ppa_burst_kind_t burst);
+
+/**
+ * Update the maximum number of pending transactions for one PPA client.
+ * @param pending  1..64 (driver-imposed range)
+ * @return ESP_OK on success.
+ */
+esp_err_t lv_draw_ppa_set_pending_trans(lv_draw_ppa_client_kind_t client,
+                                        uint8_t pending);
+#endif
+
+#if LV_USE_PPA_STATS
+typedef struct {
+    uint32_t total_tasks;       /**< LVGL tasks completed by the PPA draw unit */
+    uint32_t total_ops;         /**< PPA sub-operations submitted */
+    uint32_t failed_ops;        /**< Sub-operations whose enqueue returned an error */
+    uint32_t max_pending_seen;  /**< Peak in-flight sub-op count for a single task */
+    uint64_t total_wait_us;     /**< Cumulative time spent in wait_for_finish_cb */
+} lv_draw_ppa_stats_t;
+
+void lv_draw_ppa_get_stats(lv_draw_ppa_stats_t * out);
+void lv_draw_ppa_reset_stats(void);
 #endif
 
 /**********************

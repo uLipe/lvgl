@@ -144,6 +144,7 @@ ALLOWED_EXTERNAL_HEADERS: set[str] = {
     "esp_heap_caps.h",
     "esp_log.h",
     "esp_private/dma2d.h",
+    "esp_timer.h",
     "fastgltf/core.hpp",
     "fastgltf/math.hpp",
     "fastgltf/tools.hpp",

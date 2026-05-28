@@ -12,6 +12,14 @@
 
 #if LV_USE_PPA
 
+#if LV_USE_PPA_STATS
+    #include <esp_timer.h>
+#endif
+
+#if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
+    lv_draw_ppa_unit_t * lv_draw_ppa_unit_instance = NULL;
+#endif
+
 /*********************
 *      DEFINES
 *********************/
@@ -30,7 +38,6 @@ static void  ppa_execute_drawing(lv_draw_ppa_unit_t * u);
 static bool ppa_rotation_supported(int32_t rotation);
 #if LV_USE_PPA_ASYNC
     static int32_t ppa_wait_for_finish(lv_draw_unit_t * draw_unit);
-    static bool ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt, void * user_data);
     static void ppa_finalize_task(lv_draw_ppa_unit_t * u);
 #endif
 
@@ -101,7 +108,7 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
     /* Use a single completion callback for all clients; the user_data carries the
      * draw unit so the ISR can decrement the shared sub-op counter and wake the
      * dispatcher exactly once per LVGL task. */
-    const ppa_event_callbacks_t cbs = { .on_trans_done = ppa_trans_done_cb };
+    const ppa_event_callbacks_t cbs = { .on_trans_done = lv_draw_ppa_trans_done_cb };
     res = ppa_client_register_event_callbacks(draw_ppa_unit->srm_client, &cbs);
     LV_ASSERT(res == ESP_OK);
     res = ppa_client_register_event_callbacks(draw_ppa_unit->fill_client, &cbs);
@@ -114,6 +121,50 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
     if(!lv_draw_ppa_tile_pool_init(draw_ppa_unit)) {
         LV_LOG_WARN("PPA tile composer pool unavailable; multi-pass paths will fall back to SW");
     }
+#endif
+
+#if LV_USE_PPA_RUNTIME_TUNING
+    /* Cache per-client config so runtime retune calls only need to overwrite
+     * the field being changed before re-registering the client. */
+    draw_ppa_unit->client_cfg[LV_DRAW_PPA_CLIENT_FILL] = (ppa_client_config_t) {
+        .oper_type = PPA_OPERATION_FILL,
+        .data_burst_length = burst_len,
+#if LV_USE_PPA_ASYNC
+        .max_pending_trans_num = LV_PPA_FILL_PENDING_TRANS,
+#else
+        .max_pending_trans_num = 1,
+#endif
+    };
+    draw_ppa_unit->client_cfg[LV_DRAW_PPA_CLIENT_BLEND] = (ppa_client_config_t) {
+        .oper_type = PPA_OPERATION_BLEND,
+        .data_burst_length = burst_len,
+#if LV_USE_PPA_ASYNC
+        .max_pending_trans_num = LV_PPA_BLEND_PENDING_TRANS,
+#else
+        .max_pending_trans_num = 1,
+#endif
+    };
+    draw_ppa_unit->client_cfg[LV_DRAW_PPA_CLIENT_SRM] = (ppa_client_config_t) {
+        .oper_type = PPA_OPERATION_SRM,
+        .data_burst_length = burst_len,
+#if LV_USE_PPA_ASYNC
+        .max_pending_trans_num = LV_PPA_SRM_PENDING_TRANS,
+#else
+        .max_pending_trans_num = 1,
+#endif
+    };
+#endif
+
+#if LV_USE_PPA_STATS
+    atomic_init(&draw_ppa_unit->stat_total_tasks, 0u);
+    atomic_init(&draw_ppa_unit->stat_total_ops, 0u);
+    atomic_init(&draw_ppa_unit->stat_failed_ops, 0u);
+    atomic_init(&draw_ppa_unit->stat_max_pending, 0u);
+    atomic_init(&draw_ppa_unit->stat_total_wait_us, 0ull);
+#endif
+
+#if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
+    lv_draw_ppa_unit_instance = draw_ppa_unit;
 #endif
 }
 
@@ -414,6 +465,9 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_delete(lv_draw_unit_t * draw_unit)
 #if LV_USE_PPA_ASYNC
     lv_thread_sync_delete(&u->done_sync);
 #endif
+#if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
+    if(lv_draw_ppa_unit_instance == u) lv_draw_ppa_unit_instance = NULL;
+#endif
     return 0;
 }
 
@@ -504,8 +558,8 @@ static bool LV_ATTRIBUTE_FAST_MEM ppa_rotation_supported(int32_t rotation)
 
 #if LV_USE_PPA_ASYNC
 
-static bool LV_ATTRIBUTE_FAST_MEM ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt,
-                                                    void * user_data)
+bool LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt,
+                                                     void * user_data)
 {
     LV_UNUSED(client);
     LV_UNUSED(evt);
@@ -544,6 +598,10 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_finalize_task(lv_draw_ppa_unit_t * u)
     }
 #endif
 
+#if LV_USE_PPA_STATS
+    atomic_fetch_add(&u->stat_total_tasks, 1u);
+#endif
+
     t->state = LV_DRAW_TASK_STATE_FINISHED;
     u->task_act = NULL;
     lv_draw_dispatch_request();
@@ -558,7 +616,14 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_wait_for_finish(lv_draw_unit_t * draw_u
      * FreeRTOS-aware and already blocks the producer when the per-client queue
      * is full, so this wait covers only the in-flight portion of the work. */
     if(atomic_load(&u->pending_ops) > 0) {
+#if LV_USE_PPA_STATS
+        int64_t t0 = esp_timer_get_time();
+#endif
         lv_thread_sync_wait(&u->done_sync);
+#if LV_USE_PPA_STATS
+        int64_t dt = esp_timer_get_time() - t0;
+        if(dt > 0) atomic_fetch_add(&u->stat_total_wait_us, (unsigned long long)dt);
+#endif
     }
 
     ppa_finalize_task(u);
