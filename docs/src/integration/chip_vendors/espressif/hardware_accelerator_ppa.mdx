@@ -161,10 +161,45 @@ destination with `PPA_ALPHA_SCALE`). The borrowed tile is released after the ISR
 last pass, so the pool only needs to be deep enough to cover the tasks in flight at any
 moment.
 
+### Geometric decomposition
+
+A second wave of Kconfig options accepts task types that the engine alone cannot render in
+one operation by submitting many small fills:
+
+* `LV_USE_PPA_GRADIENT` — two-stop horizontal/vertical gradients are split into
+  `LV_PPA_GRADIENT_STEPS` solid-color strips.
+* `LV_USE_PPA_ROUND_FILL` — rounded fills (`radius >= LV_PPA_ROUND_FILL_MIN_RADIUS`) become a
+  body band plus 2*radius scanline fills covering the four corners. The decomposition is
+  binary (no anti-aliasing); raise the threshold or disable the option for UIs where the
+  difference is visible.
+* `LV_USE_PPA_LINE` — axis-aligned lines (no dashes, no rounded ends) are mapped to a single
+  fill rectangle.
+* `LV_USE_PPA_TRIANGLE` — right triangles aligned to the screen axes are decomposed into one
+  PPA fill per scanline along the hypotenuse.
+
+These workers reuse the asynchronous fill client, so they benefit from the same `wait_for_finish_cb`
+plumbing as the simpler paths above. Heavy radii or long hypotenuses translate to many fills,
+so leave the per-client `max_pending_trans_num` well above the worst-case decomposition.
+
+### Runtime tuning and telemetry
+
+Two further options expose hooks meant for benchmarking and adaptive tuning:
+
+* `LV_USE_PPA_RUNTIME_TUNING` adds `lv_draw_ppa_set_burst_length` and
+  `lv_draw_ppa_set_pending_trans`. Both functions drain the active draw unit and re-register
+  the affected client with the new configuration; call them from the LVGL dispatch context
+  (or while holding the LVGL lock).
+* `LV_USE_PPA_STATS` keeps atomic counters in the draw unit (total tasks, total sub-ops,
+  enqueue failures, peak in-flight count and cumulative wait time) and exports them through
+  `lv_draw_ppa_get_stats` / `lv_draw_ppa_reset_stats`.
+
+Counters are only incremented when the option is enabled, so production builds can ship with
+the telemetry off and pay zero overhead.
+
 ### Putting it together
 
-The minimal `sdkconfig.defaults` to exercise every composer option in addition to the basic
-PPA paths is:
+The minimal `sdkconfig.defaults` to exercise every composer, decomposition and instrumentation
+option in addition to the basic PPA paths is:
 
 ```c
 CONFIG_LV_USE_PPA=y
@@ -175,6 +210,12 @@ CONFIG_LV_USE_PPA_BORDER=y
 CONFIG_LV_USE_PPA_MASK_RECT=y
 CONFIG_LV_USE_PPA_ASYNC=y
 CONFIG_LV_USE_PPA_TILE_COMPOSER=y
+CONFIG_LV_USE_PPA_GRADIENT=y
+CONFIG_LV_USE_PPA_ROUND_FILL=y
+CONFIG_LV_USE_PPA_LINE=y
+CONFIG_LV_USE_PPA_TRIANGLE=y
+CONFIG_LV_USE_PPA_RUNTIME_TUNING=y
+CONFIG_LV_USE_PPA_STATS=y
 ```
 
 Each option can be toggled off independently if a particular UI degrades visually or if the
