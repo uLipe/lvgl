@@ -231,6 +231,7 @@ ALLOWED_EXTERNAL_HEADERS: set[str] = {
     "semaphore.h",
     "semphr.h",
     "setjmp.h",
+    "stdatomic.h",
     "stdio.h",
     "stdlib.h",
     "string",

@@ -36,11 +36,14 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_fill(lv_draw_task_t * t, const lv_draw_fi
     fill_cfg.out.buffer         = draw_buf->data;
     fill_cfg.out.buffer_size    = draw_buf->data_size;
     fill_cfg.out.pic_w          = draw_buf->header.w;
-    fill_cfg.out.pic_h          = draw_buf->header.h;;
-    fill_cfg.mode            = PPA_TRANS_MODE_BLOCKING;
+    fill_cfg.out.pic_h          = draw_buf->header.h;
+    fill_cfg.mode               = LV_PPA_TRANS_MODE;
+    fill_cfg.user_data          = u;
 
+    lv_draw_ppa_begin_op(u);
     esp_err_t ret = ppa_do_fill(u->fill_client, &fill_cfg);
     if(ret != ESP_OK) {
+        lv_draw_ppa_cancel_op(u);
         LV_LOG_ERROR("PPA fill failed: %d", ret);
     }
 }

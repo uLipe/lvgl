@@ -1188,6 +1188,38 @@
             #define LV_PPA_BURST_LENGTH    128
         #endif
     #endif
+
+    /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */
+    #ifndef LV_USE_PPA_ASYNC
+        #ifdef CONFIG_LV_USE_PPA_ASYNC
+            #define LV_USE_PPA_ASYNC CONFIG_LV_USE_PPA_ASYNC
+        #else
+            #define LV_USE_PPA_ASYNC 0
+        #endif
+    #endif
+
+    /** Per-client PPA queue depth (driver blocks when full). Range 1..64. */
+    #ifndef LV_PPA_FILL_PENDING_TRANS
+        #ifdef CONFIG_LV_PPA_FILL_PENDING_TRANS
+            #define LV_PPA_FILL_PENDING_TRANS CONFIG_LV_PPA_FILL_PENDING_TRANS
+        #else
+            #define LV_PPA_FILL_PENDING_TRANS    16
+        #endif
+    #endif
+    #ifndef LV_PPA_BLEND_PENDING_TRANS
+        #ifdef CONFIG_LV_PPA_BLEND_PENDING_TRANS
+            #define LV_PPA_BLEND_PENDING_TRANS CONFIG_LV_PPA_BLEND_PENDING_TRANS
+        #else
+            #define LV_PPA_BLEND_PENDING_TRANS   16
+        #endif
+    #endif
+    #ifndef LV_PPA_SRM_PENDING_TRANS
+        #ifdef CONFIG_LV_PPA_SRM_PENDING_TRANS
+            #define LV_PPA_SRM_PENDING_TRANS CONFIG_LV_PPA_SRM_PENDING_TRANS
+        #else
+            #define LV_PPA_SRM_PENDING_TRANS     16
+        #endif
+    #endif
 #endif
 
 /** Use Espressif DMA2D for copy and format conversion */

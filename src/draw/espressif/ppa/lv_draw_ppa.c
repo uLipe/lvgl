@@ -28,6 +28,11 @@ static int32_t ppa_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
 static int32_t ppa_delete(lv_draw_unit_t * draw_unit);
 static void  ppa_execute_drawing(lv_draw_ppa_unit_t * u);
 static bool ppa_rotation_supported(int32_t rotation);
+#if LV_USE_PPA_ASYNC
+    static int32_t ppa_wait_for_finish(lv_draw_unit_t * draw_unit);
+    static bool ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt, void * user_data);
+    static void ppa_finalize_task(lv_draw_ppa_unit_t * u);
+#endif
 
 /**********************
 *   GLOBAL FUNCTIONS
@@ -45,37 +50,65 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
     draw_ppa_unit->base_unit.dispatch_cb  = ppa_dispatch;
     draw_ppa_unit->base_unit.delete_cb    = ppa_delete;
     draw_ppa_unit->base_unit.name         = "ESP_PPA";
+#if LV_USE_PPA_ASYNC
+    draw_ppa_unit->base_unit.wait_for_finish_cb = ppa_wait_for_finish;
+    lv_thread_sync_init(&draw_ppa_unit->done_sync);
+    atomic_init(&draw_ppa_unit->pending_ops, 0);
+#endif
 
-    /* Register SRM client */
-    cfg.oper_type = PPA_OPERATION_SRM;
-    cfg.max_pending_trans_num = 1;
 #if (LV_PPA_BURST_LENGTH == 128)
-    cfg.data_burst_length = PPA_DATA_BURST_LENGTH_128;
+    const ppa_data_burst_length_t burst_len = PPA_DATA_BURST_LENGTH_128;
 #elif (LV_PPA_BURST_LENGTH == 64)
-    cfg.data_burst_length = PPA_DATA_BURST_LENGTH_64;
+    const ppa_data_burst_length_t burst_len = PPA_DATA_BURST_LENGTH_64;
 #elif (LV_PPA_BURST_LENGTH == 32)
-    cfg.data_burst_length = PPA_DATA_BURST_LENGTH_32;
+    const ppa_data_burst_length_t burst_len = PPA_DATA_BURST_LENGTH_32;
 #elif (LV_PPA_BURST_LENGTH == 16)
-    cfg.data_burst_length = PPA_DATA_BURST_LENGTH_16;
+    const ppa_data_burst_length_t burst_len = PPA_DATA_BURST_LENGTH_16;
 #elif (LV_PPA_BURST_LENGTH == 8)
-    cfg.data_burst_length = PPA_DATA_BURST_LENGTH_8;
+    const ppa_data_burst_length_t burst_len = PPA_DATA_BURST_LENGTH_8;
 #else
 #error "Invalid burst length selection for PPA"
 #endif
 
+    /* Register SRM client */
+    cfg.oper_type = PPA_OPERATION_SRM;
+    cfg.data_burst_length = burst_len;
+#if LV_USE_PPA_ASYNC
+    cfg.max_pending_trans_num = LV_PPA_SRM_PENDING_TRANS;
+#else
+    cfg.max_pending_trans_num = 1;
+#endif
     res = ppa_register_client(&cfg, &draw_ppa_unit->srm_client);
     LV_ASSERT(res == ESP_OK);
 
     /* Register Fill client */
     cfg.oper_type = PPA_OPERATION_FILL;
+#if LV_USE_PPA_ASYNC
+    cfg.max_pending_trans_num = LV_PPA_FILL_PENDING_TRANS;
+#endif
     res = ppa_register_client(&cfg, &draw_ppa_unit->fill_client);
     LV_ASSERT(res == ESP_OK);
 
     /* Register Blend client */
     cfg.oper_type = PPA_OPERATION_BLEND;
-
+#if LV_USE_PPA_ASYNC
+    cfg.max_pending_trans_num = LV_PPA_BLEND_PENDING_TRANS;
+#endif
     res = ppa_register_client(&cfg, &draw_ppa_unit->blend_client);
     LV_ASSERT(res == ESP_OK);
+
+#if LV_USE_PPA_ASYNC
+    /* Use a single completion callback for all clients; the user_data carries the
+     * draw unit so the ISR can decrement the shared sub-op counter and wake the
+     * dispatcher exactly once per LVGL task. */
+    const ppa_event_callbacks_t cbs = { .on_trans_done = ppa_trans_done_cb };
+    res = ppa_client_register_event_callbacks(draw_ppa_unit->srm_client, &cbs);
+    LV_ASSERT(res == ESP_OK);
+    res = ppa_client_register_event_callbacks(draw_ppa_unit->fill_client, &cbs);
+    LV_ASSERT(res == ESP_OK);
+    res = ppa_client_register_event_callbacks(draw_ppa_unit->blend_client, &cbs);
+    LV_ASSERT(res == ESP_OK);
+#endif
 }
 
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_deinit(void)
@@ -196,11 +229,26 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_dispatch(lv_draw_unit_t * draw_unit, lv
 
     ppa_execute_drawing(u);
 
+#if LV_USE_PPA_ASYNC
+    /* Async path: if the worker queued at least one PPA sub-op the ISR will
+     * signal `done_sync` once the last one finishes. If it submitted nothing
+     * (fully clipped area, geometry rejected by the hardware constraints, ...)
+     * the ISR will never fire, and leaving `task_act` set would stall every
+     * dependent task in the layer because LVGL only calls `wait_for_finish_cb`
+     * when *all* units idle simultaneously. Finalize synchronously in that
+     * case so the scheduler can move on. */
+    if(atomic_load(&u->pending_ops) == 0) {
+        ppa_finalize_task(u);
+        return 1;
+    }
+    return LV_DRAW_UNIT_IDLE;
+#else
     u->task_act->state = LV_DRAW_TASK_STATE_FINISHED;
     u->task_act = NULL;
     lv_draw_dispatch_request();
 
     return 1;
+#endif
 }
 
 static int32_t LV_ATTRIBUTE_FAST_MEM ppa_delete(lv_draw_unit_t * draw_unit)
@@ -209,6 +257,9 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_delete(lv_draw_unit_t * draw_unit)
     ppa_unregister_client(u->srm_client);
     ppa_unregister_client(u->fill_client);
     ppa_unregister_client(u->blend_client);
+#if LV_USE_PPA_ASYNC
+    lv_thread_sync_delete(&u->done_sync);
+#endif
     return 0;
 }
 
@@ -220,26 +271,32 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
     lv_area_t area;
 
     if(!lv_area_intersect(&area, &t->area, &t->clip_area)) return;
+
+    /* In sync mode the cache is flushed both before and after the PPA op so the
+     * engine sees the latest CPU writes and the next consumer sees the engine's
+     * output. In async mode the post-op flush is deferred to `wait_for_finish_cb`
+     * because the operation is still pending when this function returns. */
     lv_draw_buf_invalidate_cache(buf, &area);
 
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL:
             lv_draw_ppa_fill(t, (lv_draw_fill_dsc_t *)t->draw_dsc, &area);
-            lv_draw_buf_invalidate_cache(buf, &area);
             break;
         case LV_DRAW_TASK_TYPE_IMAGE:
             lv_draw_ppa_img(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
-            lv_draw_buf_invalidate_cache(buf, &area);
             break;
 #if LV_USE_PPA_TRANSFORM
         case LV_DRAW_TASK_TYPE_LAYER:
             lv_draw_ppa_layer(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
-            lv_draw_buf_invalidate_cache(buf, &area);
             break;
 #endif
         default:
             break;
     }
+
+#if !LV_USE_PPA_ASYNC
+    lv_draw_buf_invalidate_cache(buf, &area);
+#endif
 }
 
 static bool LV_ATTRIBUTE_FAST_MEM ppa_rotation_supported(int32_t rotation)
@@ -248,5 +305,62 @@ static bool LV_ATTRIBUTE_FAST_MEM ppa_rotation_supported(int32_t rotation)
     if(r < 0) r += 3600;
     return (r == 0 || r == 900 || r == 1800 || r == 2700);
 }
+
+#if LV_USE_PPA_ASYNC
+
+static bool LV_ATTRIBUTE_FAST_MEM ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt,
+                                                    void * user_data)
+{
+    LV_UNUSED(client);
+    LV_UNUSED(evt);
+    lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)user_data;
+    /* fetch_sub returns the value before subtraction; the last completion (counter
+     * was 1) is the one that releases the dispatcher waiting in wait_for_finish_cb. */
+    if(atomic_fetch_sub(&u->pending_ops, 1) == 1) {
+        lv_thread_sync_signal_isr(&u->done_sync);
+    }
+    return false;
+}
+
+static void LV_ATTRIBUTE_FAST_MEM ppa_finalize_task(lv_draw_ppa_unit_t * u)
+{
+    lv_draw_task_t * t = u->task_act;
+    if(t == NULL) return;
+
+    /* Hardware just finished writing the destination buffer. Invalidate the CPU
+     * cache so subsequent readers (next draw unit, display flush) observe the
+     * fresh pixels instead of stale lines. The handler installed in
+     * lv_draw_ppa_buf.c performs the actual `esp_cache_msync`. */
+    lv_layer_t * layer  = t->target_layer;
+    lv_draw_buf_t * buf = layer ? layer->draw_buf : NULL;
+    if(buf != NULL) {
+        lv_area_t area;
+        if(lv_area_intersect(&area, &t->area, &t->clip_area)) {
+            lv_draw_buf_invalidate_cache(buf, &area);
+        }
+    }
+
+    t->state = LV_DRAW_TASK_STATE_FINISHED;
+    u->task_act = NULL;
+    lv_draw_dispatch_request();
+}
+
+static int32_t LV_ATTRIBUTE_FAST_MEM ppa_wait_for_finish(lv_draw_unit_t * draw_unit)
+{
+    lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)draw_unit;
+    if(u->task_act == NULL) return 0;
+
+    /* Block until the ISR signals completion. The PPA driver itself is
+     * FreeRTOS-aware and already blocks the producer when the per-client queue
+     * is full, so this wait covers only the in-flight portion of the work. */
+    if(atomic_load(&u->pending_ops) > 0) {
+        lv_thread_sync_wait(&u->done_sync);
+    }
+
+    ppa_finalize_task(u);
+    return 0;
+}
+
+#endif /*LV_USE_PPA_ASYNC*/
 
 #endif /*LV_USE_PPA*/

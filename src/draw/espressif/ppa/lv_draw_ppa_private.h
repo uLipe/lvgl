@@ -16,13 +16,6 @@ extern "C" {
 #include "../../../lvgl_public.h"
 
 #if LV_USE_PPA
-#if LV_PPA_NONBLOCKING_OPS
-#error "PPA draw in nonblocking is experimental and not supported yet, please make it to 0!"
-#endif
-
-#ifndef LV_PPA_NONBLOCKING_OPS
-#define LV_PPA_NONBLOCKING_OPS 0
-#endif
 
 #include "../../lv_draw_private.h"
 #include "../../../display/lv_display_private.h"
@@ -30,6 +23,7 @@ extern "C" {
 
 /* The ppa driver depends heavily on the esp-idf headers*/
 #include <sdkconfig.h>
+#include <stdatomic.h>
 
 #if (CONFIG_LV_DRAW_BUF_ALIGN != CONFIG_CACHE_L2_CACHE_LINE_SIZE)
 #error "CONFIG_LV_DRAW_BUF_ALIGN must be equal to CONFIG_CACHE_L2_CACHE_LINE_SIZE!"
@@ -60,6 +54,16 @@ typedef struct lv_draw_ppa_unit {
     ppa_client_handle_t fill_client;
     ppa_client_handle_t blend_client;
     uint8_t * buf;
+#if LV_USE_PPA_ASYNC
+    /* Synchronization primitive signaled from the PPA ISR when the last sub-operation
+     * of the active LVGL task completes. The draw scheduler waits on this from
+     * `wait_for_finish_cb` before consuming the rendered buffer. */
+    lv_thread_sync_t done_sync;
+    /* Number of PPA sub-operations enqueued for the current LVGL task. A single LVGL
+     * draw task may decompose into several PPA ops (e.g. border = 4 fills). Each
+     * ISR completion decrements the counter; reaching zero signals `done_sync`. */
+    atomic_int pending_ops;
+#endif
 } lv_draw_ppa_unit_t;
 
 /**********************
@@ -180,6 +184,37 @@ static inline ppa_srm_color_mode_t lv_color_format_to_ppa_srm(lv_color_format_t 
         default:
             return PPA_SRM_COLOR_MODE_RGB565;
     }
+}
+
+/* Common transfer mode used by every `ppa_do_*` call. With async enabled the PPA driver
+ * returns immediately and signals `done_sync` from its ISR; otherwise the call blocks
+ * until the engine finishes the operation (legacy behavior). */
+#if LV_USE_PPA_ASYNC
+#define LV_PPA_TRANS_MODE PPA_TRANS_MODE_NON_BLOCKING
+#else
+#define LV_PPA_TRANS_MODE PPA_TRANS_MODE_BLOCKING
+#endif
+
+/* Sub-operation accounting helpers used by every `lv_draw_ppa_*` worker.
+ * `begin_op` must be called before each `ppa_do_*` enqueue, `cancel_op`
+ * compensates the counter when the enqueue itself fails so the wait callback
+ * does not deadlock. */
+static inline void lv_draw_ppa_begin_op(lv_draw_ppa_unit_t * u)
+{
+#if LV_USE_PPA_ASYNC
+    atomic_fetch_add(&u->pending_ops, 1);
+#else
+    LV_UNUSED(u);
+#endif
+}
+
+static inline void lv_draw_ppa_cancel_op(lv_draw_ppa_unit_t * u)
+{
+#if LV_USE_PPA_ASYNC
+    atomic_fetch_sub(&u->pending_ops, 1);
+#else
+    LV_UNUSED(u);
+#endif
 }
 
 #define PPA_ALIGN_UP(x, align)  ((((x) + (align) - 1) / (align)) * (align))

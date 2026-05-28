@@ -135,11 +135,13 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
         srm_cfg.rgb_swap = false;
         srm_cfg.byte_swap = false;
         srm_cfg.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
-        srm_cfg.mode = PPA_TRANS_MODE_BLOCKING;
+        srm_cfg.mode = LV_PPA_TRANS_MODE;
         srm_cfg.user_data = u;
 
+        lv_draw_ppa_begin_op(u);
         esp_err_t srm_ret = ppa_do_scale_rotate_mirror(u->srm_client, &srm_cfg);
         if(srm_ret != ESP_OK) {
+            lv_draw_ppa_cancel_op(u);
             LV_LOG_WARN("PPA SRM failed: %d", srm_ret);
         }
         return;
@@ -195,11 +197,13 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
     cfg.out.block_offset_x = dest_area.x1;
     cfg.out.block_offset_y = dest_area.y1;
     cfg.out.blend_cm = lv_color_format_to_ppa_blend(dest_cf);
-    cfg.mode = PPA_TRANS_MODE_BLOCKING;
+    cfg.mode = LV_PPA_TRANS_MODE;
     cfg.user_data = u;
 
+    lv_draw_ppa_begin_op(u);
     esp_err_t ret = ppa_do_blend(u->blend_client, &cfg);
     if(ret != ESP_OK) {
+        lv_draw_ppa_cancel_op(u);
         LV_LOG_WARN("PPA draw_img blend failed: %d", ret);
     }
 }

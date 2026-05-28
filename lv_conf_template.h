@@ -415,6 +415,14 @@
     #define LV_USE_PPA_IMG      0
     #define LV_USE_PPA_TRANSFORM 0
     #define LV_PPA_BURST_LENGTH    128
+
+    /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */
+    #define LV_USE_PPA_ASYNC 0
+
+    /** Per-client PPA queue depth (driver blocks when full). Range 1..64. */
+    #define LV_PPA_FILL_PENDING_TRANS    16
+    #define LV_PPA_BLEND_PENDING_TRANS   16
+    #define LV_PPA_SRM_PENDING_TRANS     16
 #endif
 
 /** Use Espressif DMA2D for copy and format conversion */

@@ -636,6 +636,35 @@ menu "LVGL configuration"
 		default n
 		depends on LV_USE_PPA
 
+		config LV_USE_PPA_ASYNC
+		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
+		default n
+		depends on LV_USE_PPA
+		help
+			When enabled, draw operations are submitted to the PPA queue and the LVGL draw unit
+			waits for completion via `wait_for_finish_cb`, freeing the CPU during PPA execution.
+
+		config LV_PPA_FILL_PENDING_TRANS
+		int "PPA fill client maximum pending transactions"
+		depends on LV_USE_PPA_ASYNC
+		default 16
+		range 1 64
+		help
+			Maximum number of PPA fill transactions that can be queued in the driver. The driver
+			blocks the caller (FreeRTOS-aware) when the queue is full.
+
+		config LV_PPA_BLEND_PENDING_TRANS
+		int "PPA blend client maximum pending transactions"
+		depends on LV_USE_PPA_ASYNC
+		default 16
+		range 1 64
+
+		config LV_PPA_SRM_PENDING_TRANS
+		int "PPA SRM client maximum pending transactions"
+		depends on LV_USE_PPA_ASYNC
+		default 16
+		range 1 64
+
 		config LV_USE_ESP_DMA2D
 		bool "Use Espressif's DMA2D for copy and format conversion"
 		default n
