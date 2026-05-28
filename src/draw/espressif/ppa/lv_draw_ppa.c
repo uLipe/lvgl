@@ -156,6 +156,22 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
             }
 #endif
 
+#if LV_USE_PPA_MASK_RECT
+        case LV_DRAW_TASK_TYPE_MASK_RECTANGLE: {
+                const lv_draw_mask_rect_dsc_t * dsc = (lv_draw_mask_rect_dsc_t *)t->draw_dsc;
+                /* Phase 1 only handles sharp-corner masks; rounded ones need the
+                 * tile composer (Phase 2) because the engine has no per-pixel
+                 * alpha-multiply primitive. */
+                if(dsc->radius != 0) return 0;
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
         case LV_DRAW_TASK_TYPE_IMAGE: {
                 lv_draw_image_dsc_t * dsc = t->draw_dsc;
                 bool common_ok = dsc->header.cf < LV_COLOR_FORMAT_PROPRIETARY_START
@@ -328,6 +344,11 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
 #if LV_USE_PPA_BORDER
         case LV_DRAW_TASK_TYPE_BORDER:
             lv_draw_ppa_border(t, (lv_draw_border_dsc_t *)t->draw_dsc, &t->area);
+            break;
+#endif
+#if LV_USE_PPA_MASK_RECT
+        case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
+            lv_draw_ppa_mask_rect(t, (lv_draw_mask_rect_dsc_t *)t->draw_dsc);
             break;
 #endif
         case LV_DRAW_TASK_TYPE_IMAGE:

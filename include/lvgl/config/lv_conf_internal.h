@@ -1195,6 +1195,13 @@
             #define LV_USE_PPA_BORDER   0
         #endif
     #endif
+    #ifndef LV_USE_PPA_MASK_RECT
+        #ifdef CONFIG_LV_USE_PPA_MASK_RECT
+            #define LV_USE_PPA_MASK_RECT CONFIG_LV_USE_PPA_MASK_RECT
+        #else
+            #define LV_USE_PPA_MASK_RECT 0
+        #endif
+    #endif
     #ifndef LV_PPA_BURST_LENGTH
         #ifdef CONFIG_LV_PPA_BURST_LENGTH
             #define LV_PPA_BURST_LENGTH CONFIG_LV_PPA_BURST_LENGTH

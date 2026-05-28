@@ -654,6 +654,16 @@ menu "LVGL configuration"
 			rectangular strips and submit them to the PPA fill client. Borders with
 			rounded corners or non-opaque alpha keep using the SW renderer.
 
+		config LV_USE_PPA_MASK_RECT
+		bool "Use Espressif PPA fills for sharp-corner mask rectangles"
+		default n
+		depends on LV_USE_PPA
+		help
+			Decompose LV_DRAW_TASK_TYPE_MASK_RECTANGLE tasks with radius=0 into up to
+			four PPA fills (clear-outside) or one fill (clear-inside). Rounded mask
+			rectangles continue to use the SW renderer until the tile composer is
+			enabled (Phase 2).
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n
