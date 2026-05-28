@@ -101,6 +101,85 @@ Please notice that the PPA is at experimental level where some performance gains
 to rectangle copy or filling, while for image blending, even though it is operational, there are no significant gains,
 the initial cause for that according to the PPA section from reference manual is due to the DMA-2D memory bandwidth.
 
+## Asynchronous dispatch and composer extensions
+
+Beyond the basic image and fill clients, the PPA draw unit can be configured to behave as an
+asynchronous 2D composer. Each option below is opt-in and orthogonal: turning one off does not
+affect the others, so projects can adopt them gradually after measuring the impact on a specific UI.
+
+### Async dispatch (`LV_USE_PPA_ASYNC`)
+
+Submits all PPA work in non-blocking mode and registers a single ISR-backed completion callback
+shared by every client. The dispatcher returns control to the LVGL scheduler as soon as the
+operation is queued, and the matching `wait_for_finish_cb` synchronizes the destination cache
+when the rendered buffer is needed.
+
+Three Kconfig knobs control the per-client queue depth:
+
+```c
+CONFIG_LV_USE_PPA_ASYNC=y
+CONFIG_LV_PPA_FILL_PENDING_TRANS=16
+CONFIG_LV_PPA_BLEND_PENDING_TRANS=16
+CONFIG_LV_PPA_SRM_PENDING_TRANS=16
+```
+
+The driver itself is FreeRTOS-aware and blocks the producer when a client queue is full, so
+backpressure does not require additional handling on the LVGL side.
+
+### Identity layer composer (`LV_USE_PPA_LAYER`)
+
+Routes `LV_DRAW_TASK_TYPE_LAYER` tasks without rotation/scale/mirror through the PPA blend
+client, sharing the worker used by image draws. Combined with `LV_USE_PPA_TRANSFORM` the two
+options can be enabled together: rotated/scaled layers keep using the SRM client, while
+identity layers benefit from the simpler blend path.
+
+### Border decomposition (`LV_USE_PPA_BORDER`)
+
+Sharp-corner, opaque borders are decomposed into up to four axis-aligned strips and submitted
+as independent PPA fills. Vertical strips trim the rows already covered by the top/bottom
+strips so corner pixels are written exactly once. Borders with rounded corners or non-opaque
+alpha continue to use the SW renderer.
+
+### Mask rectangle (`LV_USE_PPA_MASK_RECT`)
+
+Mask rectangles with `radius == 0` are decomposed into a small set of PPA fills with a fully
+transparent color: with `keep_outside == 0` the four strips of the clip rectangle outside
+`dsc->area` are cleared; with `keep_outside == 1` the masked area itself is cleared. Rounded
+masks need a per-pixel alpha multiply that is not exposed as a single PPA primitive (the
+engine offers `PPA_ALPHA_SCALE` per transaction, `PPA_ALPHA_INVERT` per pixel and Porter-Duff
+OVER blending, none of which yield `A_dst *= mask` in one op), so they remain on the SW path
+in this phase.
+
+### Tile composer (`LV_USE_PPA_TILE_COMPOSER`)
+
+Allocates a small pool of cache-aligned ARGB8888 tiles in PSRAM (`LV_PPA_TILE_SIZE`,
+`LV_PPA_TILE_POOL_SIZE`) and uses one tile as scratch for multi-pass operations. The first
+consumer is the layer recolor combined with global opa, which cannot be expressed in a single
+PPA op: the work is split into three hardware passes (`fill` of the recolor color, `blend`
+mixing the source layer over the recolored tile, then `blend` of the tile over the
+destination with `PPA_ALPHA_SCALE`). The borrowed tile is released after the ISR signals the
+last pass, so the pool only needs to be deep enough to cover the tasks in flight at any
+moment.
+
+### Putting it together
+
+The minimal `sdkconfig.defaults` to exercise every composer option in addition to the basic
+PPA paths is:
+
+```c
+CONFIG_LV_USE_PPA=y
+CONFIG_LV_USE_PPA_IMG=y
+CONFIG_LV_USE_PPA_TRANSFORM=y
+CONFIG_LV_USE_PPA_LAYER=y
+CONFIG_LV_USE_PPA_BORDER=y
+CONFIG_LV_USE_PPA_MASK_RECT=y
+CONFIG_LV_USE_PPA_ASYNC=y
+CONFIG_LV_USE_PPA_TILE_COMPOSER=y
+```
+
+Each option can be toggled off independently if a particular UI degrades visually or if the
+PSRAM footprint of the tile pool is undesirable.
+
 ## Using the Espressif LVGL component PPA features
 
 The Espressif IDF LVGL port component also offers hardware acceleration
