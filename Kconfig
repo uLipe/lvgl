@@ -636,6 +636,15 @@ menu "LVGL configuration"
 		default n
 		depends on LV_USE_PPA
 
+		config LV_USE_PPA_LAYER
+		bool "Use Espressif PPA blend for identity layer composition"
+		default n
+		depends on LV_USE_PPA
+		help
+			Route LV_DRAW_TASK_TYPE_LAYER tasks without rotation/scale/mirror to the PPA
+			blend client. Combined with LV_USE_PPA_TRANSFORM, transformed layers continue
+			to use the SRM client; this option only handles the composer (identity) case.
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n

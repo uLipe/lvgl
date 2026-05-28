@@ -179,26 +179,52 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 }
                 return 1;
             }
-#if LV_USE_PPA_TRANSFORM
+#if LV_USE_PPA_LAYER || LV_USE_PPA_TRANSFORM
         case LV_DRAW_TASK_TYPE_LAYER: {
                 lv_draw_image_dsc_t * dsc = t->draw_dsc;
                 lv_layer_t * src_layer = (lv_layer_t *)dsc->src;
                 if(src_layer == NULL || src_layer->draw_buf == NULL) return 0;
 
+                /* Recolor on layers needs an intermediate buffer: it will be handled
+                 * by the tile composer (Phase 2) once enabled; for now the SW path
+                 * keeps responsibility for that case. */
                 bool common_ok = dsc->clip_radius == 0
                                  && dsc->bitmap_mask_src == NULL
                                  && dsc->sup == NULL
                                  && dsc->tile == 0
                                  && dsc->blend_mode == LV_BLEND_MODE_NORMAL
                                  && dsc->recolor_opa <= LV_OPA_MIN
-                                 && dsc->opa >= (lv_opa_t)LV_OPA_MAX
                                  && dsc->skew_y == 0
-                                 && dsc->skew_x == 0
-                                 && lv_area_is_equal(&t->area, &t->clip_area)
-                                 && ppa_rotation_supported(dsc->rotation)
-                                 && ppa_srm_src_cf_supported(src_layer->draw_buf->header.cf)
-                                 && ppa_srm_dest_cf_supported(dsc->base.layer->color_format);
+                                 && dsc->skew_x == 0;
                 if(!common_ok) return 0;
+
+                bool is_identity = (dsc->scale_x == LV_SCALE_NONE
+                                    && dsc->scale_y == LV_SCALE_NONE
+                                    && dsc->rotation == 0);
+                bool layer_ok = false;
+#if LV_USE_PPA_LAYER
+                /* Composer path: identity layer is just a blit/blend, dispatched via
+                 * lv_draw_ppa_img which already handles opa (ALPHA_SCALE) and the
+                 * source alpha channel. */
+                if(is_identity
+                   && ppa_src_cf_supported(src_layer->draw_buf->header.cf)
+                   && ppa_dest_cf_supported(dsc->base.layer->color_format)) {
+                    layer_ok = true;
+                }
+#endif
+#if LV_USE_PPA_TRANSFORM
+                /* Transform path: SRM client requires opaque alpha and the full
+                 * transformed area within the clip window. */
+                if(!layer_ok
+                   && dsc->opa >= (lv_opa_t)LV_OPA_MAX
+                   && lv_area_is_equal(&t->area, &t->clip_area)
+                   && ppa_rotation_supported(dsc->rotation)
+                   && ppa_srm_src_cf_supported(src_layer->draw_buf->header.cf)
+                   && ppa_srm_dest_cf_supported(dsc->base.layer->color_format)) {
+                    layer_ok = true;
+                }
+#endif
+                if(!layer_ok) return 0;
 
                 if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
                     t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
@@ -285,7 +311,7 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
         case LV_DRAW_TASK_TYPE_IMAGE:
             lv_draw_ppa_img(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
             break;
-#if LV_USE_PPA_TRANSFORM
+#if LV_USE_PPA_LAYER || LV_USE_PPA_TRANSFORM
         case LV_DRAW_TASK_TYPE_LAYER:
             lv_draw_ppa_layer(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
             break;

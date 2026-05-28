@@ -26,19 +26,6 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_img(lv_draw_task_t * t, const lv_draw_ima
     lv_draw_image_normal_helper(t, dsc, coords, lv_draw_img_ppa_core, NULL);
 }
 
-void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_layer(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc,
-                                             const lv_area_t * coords)
-{
-    lv_layer_t * layer_to_draw = (lv_layer_t *)dsc->src;
-    if(layer_to_draw == NULL || layer_to_draw->draw_buf == NULL) return;
-
-    lv_draw_image_dsc_t new_draw_dsc = *dsc;
-    new_draw_dsc.src = layer_to_draw->draw_buf;
-    new_draw_dsc.header = layer_to_draw->draw_buf->header;
-
-    lv_draw_ppa_img(t, &new_draw_dsc, coords);
-}
-
 static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const lv_draw_image_dsc_t * draw_dsc,
                                                        const lv_image_decoder_dsc_t * decoder_dsc, lv_draw_image_sup_t * sup,
                                                        const lv_area_t * img_coords, const lv_area_t * clipped_img_area)
