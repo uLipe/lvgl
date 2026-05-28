@@ -47,6 +47,9 @@ void lv_draw_ppa_img(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc,
 void lv_draw_ppa_layer(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc,
                        const lv_area_t * coords);
 
+void lv_draw_ppa_border(lv_draw_task_t * t, const lv_draw_border_dsc_t * dsc,
+                        const lv_area_t * coords);
+
 /**********************
  *      MACROS
  **********************/

@@ -645,6 +645,15 @@ menu "LVGL configuration"
 			blend client. Combined with LV_USE_PPA_TRANSFORM, transformed layers continue
 			to use the SRM client; this option only handles the composer (identity) case.
 
+		config LV_USE_PPA_BORDER
+		bool "Use Espressif PPA fills to draw rectangular borders"
+		default n
+		depends on LV_USE_PPA
+		help
+			Decompose LV_DRAW_TASK_TYPE_BORDER tasks (radius=0, opaque) into up to four
+			rectangular strips and submit them to the PPA fill client. Borders with
+			rounded corners or non-opaque alpha keep using the SW renderer.
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n

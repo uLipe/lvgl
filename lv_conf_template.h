@@ -415,6 +415,7 @@
     #define LV_USE_PPA_IMG      0
     #define LV_USE_PPA_TRANSFORM 0
     #define LV_USE_PPA_LAYER    0
+    #define LV_USE_PPA_BORDER   0
     #define LV_PPA_BURST_LENGTH    128
 
     /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */

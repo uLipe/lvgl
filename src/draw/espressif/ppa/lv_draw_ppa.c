@@ -139,6 +139,23 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 return 1;
             }
 
+#if LV_USE_PPA_BORDER
+        case LV_DRAW_TASK_TYPE_BORDER: {
+                const lv_draw_border_dsc_t * dsc = (lv_draw_border_dsc_t *)t->draw_dsc;
+                /* Only sharp-corner, opaque borders fit the strip-fill decomposition. */
+                if(dsc->radius != 0) return 0;
+                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->width <= 0) return 0;
+                if(dsc->side == LV_BORDER_SIDE_NONE) return 0;
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
         case LV_DRAW_TASK_TYPE_IMAGE: {
                 lv_draw_image_dsc_t * dsc = t->draw_dsc;
                 bool common_ok = dsc->header.cf < LV_COLOR_FORMAT_PROPRIETARY_START
@@ -308,6 +325,11 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
         case LV_DRAW_TASK_TYPE_FILL:
             lv_draw_ppa_fill(t, (lv_draw_fill_dsc_t *)t->draw_dsc, &area);
             break;
+#if LV_USE_PPA_BORDER
+        case LV_DRAW_TASK_TYPE_BORDER:
+            lv_draw_ppa_border(t, (lv_draw_border_dsc_t *)t->draw_dsc, &t->area);
+            break;
+#endif
         case LV_DRAW_TASK_TYPE_IMAGE:
             lv_draw_ppa_img(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
             break;

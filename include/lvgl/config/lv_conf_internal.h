@@ -1188,6 +1188,13 @@
             #define LV_USE_PPA_LAYER    0
         #endif
     #endif
+    #ifndef LV_USE_PPA_BORDER
+        #ifdef CONFIG_LV_USE_PPA_BORDER
+            #define LV_USE_PPA_BORDER CONFIG_LV_USE_PPA_BORDER
+        #else
+            #define LV_USE_PPA_BORDER   0
+        #endif
+    #endif
     #ifndef LV_PPA_BURST_LENGTH
         #ifdef CONFIG_LV_PPA_BURST_LENGTH
             #define LV_PPA_BURST_LENGTH CONFIG_LV_PPA_BURST_LENGTH
