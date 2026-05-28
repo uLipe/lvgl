@@ -692,6 +692,62 @@ menu "LVGL configuration"
 			tiles are taken the dispatcher waits on the PPA queue completion before
 			reusing the oldest one.
 
+		config LV_USE_PPA_GRADIENT
+		bool "Decompose horizontal/vertical gradient fills into PPA strips"
+		default n
+		depends on LV_USE_PPA
+		help
+			Approximate LV_GRAD_DIR_HOR / LV_GRAD_DIR_VER fills with two stops by
+			submitting LV_PPA_GRADIENT_STEPS solid-color strips through the PPA fill
+			client. Multi-stop, linear, radial and conical gradients keep the SW path.
+
+		config LV_PPA_GRADIENT_STEPS
+		int "Number of bands per accelerated gradient"
+		depends on LV_USE_PPA_GRADIENT
+		default 32
+		range 4 128
+		help
+			Higher values reduce banding but increase the number of PPA fills queued
+			per task. The driver queue length scales linearly with this value, so
+			leave it well under the per-client max_pending_trans_num.
+
+		config LV_USE_PPA_ROUND_FILL
+		bool "Decompose rounded rectangular fills into PPA scanlines"
+		default n
+		depends on LV_USE_PPA
+		help
+			Render LV_DRAW_TASK_TYPE_FILL tasks with radius > 0 by emitting a single
+			fill for the central band plus 2*radius scanline fills covering the four
+			rounded corners. Anti-aliasing is binary (no coverage); enable a
+			minimum-radius threshold below to keep small radii on SW.
+
+		config LV_PPA_ROUND_FILL_MIN_RADIUS
+		int "Minimum radius (pixels) accepted by the PPA round fill path"
+		depends on LV_USE_PPA_ROUND_FILL
+		default 16
+		range 1 256
+		help
+			Rounded fills with radius below this threshold stay on SW because the
+			per-op overhead of many tiny PPA fills outweighs the SW cost.
+
+		config LV_USE_PPA_LINE
+		bool "Use PPA fill for axis-aligned lines"
+		default n
+		depends on LV_USE_PPA
+		help
+			Accept LV_DRAW_TASK_TYPE_LINE tasks whose endpoints share an axis (purely
+			horizontal or vertical), no dashes, no rounded ends. Diagonal/dashed
+			lines keep the SW path.
+
+		config LV_USE_PPA_TRIANGLE
+		bool "Decompose axis-aligned right triangles into PPA scanlines"
+		default n
+		depends on LV_USE_PPA
+		help
+			Accept LV_DRAW_TASK_TYPE_TRIANGLE tasks whose three vertices form a
+			right triangle aligned to the screen axes (two vertices share x or y).
+			Each scanline of the triangle becomes one PPA fill.
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n

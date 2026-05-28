@@ -58,6 +58,22 @@ void lv_draw_ppa_border(lv_draw_task_t * t, const lv_draw_border_dsc_t * dsc,
 
 void lv_draw_ppa_mask_rect(lv_draw_task_t * t, const lv_draw_mask_rect_dsc_t * dsc);
 
+#if LV_USE_PPA_GRADIENT
+void lv_draw_ppa_gradient(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc, const lv_area_t * coords);
+#endif
+
+#if LV_USE_PPA_ROUND_FILL
+void lv_draw_ppa_round_fill(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc, const lv_area_t * coords);
+#endif
+
+#if LV_USE_PPA_LINE
+void lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_line_dsc_t * dsc);
+#endif
+
+#if LV_USE_PPA_TRIANGLE
+void lv_draw_ppa_triangle(lv_draw_task_t * t, const lv_draw_triangle_dsc_t * dsc);
+#endif
+
 /**********************
  *      MACROS
  **********************/

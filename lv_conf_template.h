@@ -423,6 +423,14 @@
     #define LV_PPA_TILE_SIZE         256
     #define LV_PPA_TILE_POOL_SIZE    4
 
+    /** Phase 3 geometric decomposition. */
+    #define LV_USE_PPA_GRADIENT          0
+    #define LV_PPA_GRADIENT_STEPS        32
+    #define LV_USE_PPA_ROUND_FILL        0
+    #define LV_PPA_ROUND_FILL_MIN_RADIUS 16
+    #define LV_USE_PPA_LINE              0
+    #define LV_USE_PPA_TRIANGLE          0
+
     #define LV_PPA_BURST_LENGTH    128
 
     /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */

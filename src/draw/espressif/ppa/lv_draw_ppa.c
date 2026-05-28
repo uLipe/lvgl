@@ -135,8 +135,35 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
                 const lv_draw_fill_dsc_t * dsc = (lv_draw_fill_dsc_t *)t->draw_dsc;
-                if((dsc->radius != 0 || dsc->grad.dir != LV_GRAD_DIR_NONE)) return 0;
-                if(dsc->opa <= (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+
+                bool fill_ok = false;
+
+                /* Solid colour fast path: still the most common case. */
+                if(dsc->radius == 0 && dsc->grad.dir == LV_GRAD_DIR_NONE) {
+                    fill_ok = true;
+                }
+
+#if LV_USE_PPA_GRADIENT
+                /* Two-stop horizontal/vertical gradients accepted; multi-stop and
+                 * angled directions stay on SW. */
+                if(!fill_ok && dsc->radius == 0 && dsc->grad.stops_count == 2
+                   && (dsc->grad.dir == LV_GRAD_DIR_HOR || dsc->grad.dir == LV_GRAD_DIR_VER)) {
+                    fill_ok = true;
+                }
+#endif
+
+#if LV_USE_PPA_ROUND_FILL
+                /* Sharp-corner solids already handled above; rounded rectangles need
+                 * the scanline decomposer and a minimum radius threshold to amortise
+                 * the per-op overhead. */
+                if(!fill_ok && dsc->radius >= LV_PPA_ROUND_FILL_MIN_RADIUS
+                   && dsc->grad.dir == LV_GRAD_DIR_NONE) {
+                    fill_ok = true;
+                }
+#endif
+
+                if(!fill_ok) return 0;
 
                 if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
                     t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
@@ -169,6 +196,55 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                  * tile composer (Phase 2) because the engine has no per-pixel
                  * alpha-multiply primitive. */
                 if(dsc->radius != 0) return 0;
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
+#if LV_USE_PPA_LINE
+        case LV_DRAW_TASK_TYPE_LINE: {
+                const lv_draw_line_dsc_t * dsc = (lv_draw_line_dsc_t *)t->draw_dsc;
+                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->dash_width != 0 || dsc->dash_gap != 0) return 0;
+                if(dsc->round_start || dsc->round_end) return 0;
+                if(dsc->points != NULL) return 0;
+                if(dsc->width <= 0) return 0;
+                int32_t p1x = (int32_t)dsc->p1.x;
+                int32_t p1y = (int32_t)dsc->p1.y;
+                int32_t p2x = (int32_t)dsc->p2.x;
+                int32_t p2y = (int32_t)dsc->p2.y;
+                if(!(p1x == p2x || p1y == p2y)) return 0;
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
+#if LV_USE_PPA_TRIANGLE
+        case LV_DRAW_TASK_TYPE_TRIANGLE: {
+                const lv_draw_triangle_dsc_t * dsc = (lv_draw_triangle_dsc_t *)t->draw_dsc;
+                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->grad.dir != LV_GRAD_DIR_NONE) return 0;
+                /* Confirm at least one pair of axes is shared so the
+                 * decomposition reduces to scanline fills. */
+                int32_t x[3] = {(int32_t)dsc->p[0].x, (int32_t)dsc->p[1].x, (int32_t)dsc->p[2].x};
+                int32_t y[3] = {(int32_t)dsc->p[0].y, (int32_t)dsc->p[1].y, (int32_t)dsc->p[2].y};
+                bool axis_aligned = false;
+                for(int i = 0; i < 3 && !axis_aligned; i++) {
+                    int j = (i + 1) % 3;
+                    int k = (i + 2) % 3;
+                    if((y[i] == y[j] && x[i] == x[k]) || (x[i] == x[j] && y[i] == y[k])) {
+                        axis_aligned = true;
+                    }
+                }
+                if(!axis_aligned) return 0;
 
                 if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
                     t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
@@ -357,9 +433,23 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
     lv_draw_buf_invalidate_cache(buf, &area);
 
     switch(t->type) {
-        case LV_DRAW_TASK_TYPE_FILL:
-            lv_draw_ppa_fill(t, (lv_draw_fill_dsc_t *)t->draw_dsc, &area);
-            break;
+        case LV_DRAW_TASK_TYPE_FILL: {
+                const lv_draw_fill_dsc_t * dsc = (lv_draw_fill_dsc_t *)t->draw_dsc;
+#if LV_USE_PPA_GRADIENT
+                if(dsc->grad.dir == LV_GRAD_DIR_HOR || dsc->grad.dir == LV_GRAD_DIR_VER) {
+                    lv_draw_ppa_gradient(t, dsc, &t->area);
+                    break;
+                }
+#endif
+#if LV_USE_PPA_ROUND_FILL
+                if(dsc->radius >= LV_PPA_ROUND_FILL_MIN_RADIUS) {
+                    lv_draw_ppa_round_fill(t, dsc, &t->area);
+                    break;
+                }
+#endif
+                lv_draw_ppa_fill(t, dsc, &area);
+                break;
+            }
 #if LV_USE_PPA_BORDER
         case LV_DRAW_TASK_TYPE_BORDER:
             lv_draw_ppa_border(t, (lv_draw_border_dsc_t *)t->draw_dsc, &t->area);
@@ -368,6 +458,16 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
 #if LV_USE_PPA_MASK_RECT
         case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
             lv_draw_ppa_mask_rect(t, (lv_draw_mask_rect_dsc_t *)t->draw_dsc);
+            break;
+#endif
+#if LV_USE_PPA_LINE
+        case LV_DRAW_TASK_TYPE_LINE:
+            lv_draw_ppa_line(t, (lv_draw_line_dsc_t *)t->draw_dsc);
+            break;
+#endif
+#if LV_USE_PPA_TRIANGLE
+        case LV_DRAW_TASK_TYPE_TRIANGLE:
+            lv_draw_ppa_triangle(t, (lv_draw_triangle_dsc_t *)t->draw_dsc);
             break;
 #endif
         case LV_DRAW_TASK_TYPE_IMAGE:

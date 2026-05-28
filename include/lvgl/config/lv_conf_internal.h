@@ -1226,6 +1226,50 @@
         #endif
     #endif
 
+    /** Phase 3 geometric decomposition. */
+    #ifndef LV_USE_PPA_GRADIENT
+        #ifdef CONFIG_LV_USE_PPA_GRADIENT
+            #define LV_USE_PPA_GRADIENT CONFIG_LV_USE_PPA_GRADIENT
+        #else
+            #define LV_USE_PPA_GRADIENT          0
+        #endif
+    #endif
+    #ifndef LV_PPA_GRADIENT_STEPS
+        #ifdef CONFIG_LV_PPA_GRADIENT_STEPS
+            #define LV_PPA_GRADIENT_STEPS CONFIG_LV_PPA_GRADIENT_STEPS
+        #else
+            #define LV_PPA_GRADIENT_STEPS        32
+        #endif
+    #endif
+    #ifndef LV_USE_PPA_ROUND_FILL
+        #ifdef CONFIG_LV_USE_PPA_ROUND_FILL
+            #define LV_USE_PPA_ROUND_FILL CONFIG_LV_USE_PPA_ROUND_FILL
+        #else
+            #define LV_USE_PPA_ROUND_FILL        0
+        #endif
+    #endif
+    #ifndef LV_PPA_ROUND_FILL_MIN_RADIUS
+        #ifdef CONFIG_LV_PPA_ROUND_FILL_MIN_RADIUS
+            #define LV_PPA_ROUND_FILL_MIN_RADIUS CONFIG_LV_PPA_ROUND_FILL_MIN_RADIUS
+        #else
+            #define LV_PPA_ROUND_FILL_MIN_RADIUS 16
+        #endif
+    #endif
+    #ifndef LV_USE_PPA_LINE
+        #ifdef CONFIG_LV_USE_PPA_LINE
+            #define LV_USE_PPA_LINE CONFIG_LV_USE_PPA_LINE
+        #else
+            #define LV_USE_PPA_LINE              0
+        #endif
+    #endif
+    #ifndef LV_USE_PPA_TRIANGLE
+        #ifdef CONFIG_LV_USE_PPA_TRIANGLE
+            #define LV_USE_PPA_TRIANGLE CONFIG_LV_USE_PPA_TRIANGLE
+        #else
+            #define LV_USE_PPA_TRIANGLE          0
+        #endif
+    #endif
+
     #ifndef LV_PPA_BURST_LENGTH
         #ifdef CONFIG_LV_PPA_BURST_LENGTH
             #define LV_PPA_BURST_LENGTH CONFIG_LV_PPA_BURST_LENGTH
