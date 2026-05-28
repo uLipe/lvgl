@@ -109,6 +109,12 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
     res = ppa_client_register_event_callbacks(draw_ppa_unit->blend_client, &cbs);
     LV_ASSERT(res == ESP_OK);
 #endif
+
+#if LV_USE_PPA_TILE_COMPOSER
+    if(!lv_draw_ppa_tile_pool_init(draw_ppa_unit)) {
+        LV_LOG_WARN("PPA tile composer pool unavailable; multi-pass paths will fall back to SW");
+    }
+#endif
 }
 
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_deinit(void)
@@ -313,6 +319,9 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_dispatch(lv_draw_unit_t * draw_unit, lv
 static int32_t LV_ATTRIBUTE_FAST_MEM ppa_delete(lv_draw_unit_t * draw_unit)
 {
     lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)draw_unit;
+#if LV_USE_PPA_TILE_COMPOSER
+    lv_draw_ppa_tile_pool_deinit(u);
+#endif
     ppa_unregister_client(u->srm_client);
     ppa_unregister_client(u->fill_client);
     ppa_unregister_client(u->blend_client);

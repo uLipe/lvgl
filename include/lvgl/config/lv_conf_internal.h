@@ -1202,6 +1202,30 @@
             #define LV_USE_PPA_MASK_RECT 0
         #endif
     #endif
+
+    /** PSRAM-backed tile pool used by multi-pass operations (recolor+opa, ...). */
+    #ifndef LV_USE_PPA_TILE_COMPOSER
+        #ifdef CONFIG_LV_USE_PPA_TILE_COMPOSER
+            #define LV_USE_PPA_TILE_COMPOSER CONFIG_LV_USE_PPA_TILE_COMPOSER
+        #else
+            #define LV_USE_PPA_TILE_COMPOSER 0
+        #endif
+    #endif
+    #ifndef LV_PPA_TILE_SIZE
+        #ifdef CONFIG_LV_PPA_TILE_SIZE
+            #define LV_PPA_TILE_SIZE CONFIG_LV_PPA_TILE_SIZE
+        #else
+            #define LV_PPA_TILE_SIZE         256
+        #endif
+    #endif
+    #ifndef LV_PPA_TILE_POOL_SIZE
+        #ifdef CONFIG_LV_PPA_TILE_POOL_SIZE
+            #define LV_PPA_TILE_POOL_SIZE CONFIG_LV_PPA_TILE_POOL_SIZE
+        #else
+            #define LV_PPA_TILE_POOL_SIZE    4
+        #endif
+    #endif
+
     #ifndef LV_PPA_BURST_LENGTH
         #ifdef CONFIG_LV_PPA_BURST_LENGTH
             #define LV_PPA_BURST_LENGTH CONFIG_LV_PPA_BURST_LENGTH

@@ -47,6 +47,17 @@ extern "C" {
 /**********************
 *      TYPEDEFS
 **********************/
+#if LV_USE_PPA_TILE_COMPOSER
+/* Single intermediate buffer used to chain multi-pass PPA operations. Tiles
+ * live in PSRAM and are aligned to the L2 cache line so they can serve as
+ * either input or output of any PPA client. */
+typedef struct {
+    void * data;
+    size_t size;
+    bool   in_use;
+} lv_draw_ppa_tile_t;
+#endif
+
 typedef struct lv_draw_ppa_unit {
     lv_draw_unit_t base_unit;
     lv_draw_task_t * task_act;
@@ -64,7 +75,21 @@ typedef struct lv_draw_ppa_unit {
      * ISR completion decrements the counter; reaching zero signals `done_sync`. */
     atomic_int pending_ops;
 #endif
+#if LV_USE_PPA_TILE_COMPOSER
+    lv_draw_ppa_tile_t tiles[LV_PPA_TILE_POOL_SIZE];
+    /* Round-robin cursor used by the tile allocator. */
+    uint32_t tile_cursor;
+#endif
 } lv_draw_ppa_unit_t;
+
+#if LV_USE_PPA_TILE_COMPOSER
+/* Pool lifecycle and acquire/release API. The pool is always sized to
+ * LV_PPA_TILE_POOL_SIZE square ARGB8888 buffers of LV_PPA_TILE_SIZE pixels. */
+bool lv_draw_ppa_tile_pool_init(lv_draw_ppa_unit_t * u);
+void lv_draw_ppa_tile_pool_deinit(lv_draw_ppa_unit_t * u);
+lv_draw_ppa_tile_t * lv_draw_ppa_tile_acquire(lv_draw_ppa_unit_t * u);
+void lv_draw_ppa_tile_release(lv_draw_ppa_unit_t * u, lv_draw_ppa_tile_t * tile);
+#endif
 
 /**********************
 *  STATIC PROTOTYPES

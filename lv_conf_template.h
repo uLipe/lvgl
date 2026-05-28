@@ -417,6 +417,12 @@
     #define LV_USE_PPA_LAYER    0
     #define LV_USE_PPA_BORDER   0
     #define LV_USE_PPA_MASK_RECT 0
+
+    /** PSRAM-backed tile pool used by multi-pass operations (recolor+opa, ...). */
+    #define LV_USE_PPA_TILE_COMPOSER 0
+    #define LV_PPA_TILE_SIZE         256
+    #define LV_PPA_TILE_POOL_SIZE    4
+
     #define LV_PPA_BURST_LENGTH    128
 
     /** Submit PPA work non-blocking and overlap LVGL dispatch with hardware execution. */

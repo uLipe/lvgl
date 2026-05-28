@@ -664,6 +664,34 @@ menu "LVGL configuration"
 			rectangles continue to use the SW renderer until the tile composer is
 			enabled (Phase 2).
 
+		config LV_USE_PPA_TILE_COMPOSER
+		bool "Use a PSRAM-backed tile pool to compose multi-pass PPA operations"
+		default n
+		depends on LV_USE_PPA && LV_USE_PPA_LAYER && LV_USE_PPA_ASYNC
+		help
+			Allocate a pool of intermediate ARGB8888 tiles in PSRAM so multi-pass
+			operations (e.g. layer recolor combined with global opacity) stay on the
+			PPA hardware path.
+
+		config LV_PPA_TILE_SIZE
+		int "PPA tile composer side length (square, ARGB8888)"
+		depends on LV_USE_PPA_TILE_COMPOSER
+		default 256
+		range 64 512
+		help
+			Pixel side length of each tile. Tiles are square ARGB8888 buffers, so the
+			memory footprint is `4 * size * size * pool_size` bytes of PSRAM.
+
+		config LV_PPA_TILE_POOL_SIZE
+		int "PPA tile composer pool depth"
+		depends on LV_USE_PPA_TILE_COMPOSER
+		default 4
+		range 1 8
+		help
+			Number of tiles allocated up-front. The pool is round-robin: when all
+			tiles are taken the dispatcher waits on the PPA queue completion before
+			reusing the oldest one.
+
 		config LV_USE_PPA_ASYNC
 		bool "Use the PPA driver in non-blocking mode and overlap LVGL dispatch with hardware execution"
 		default n
