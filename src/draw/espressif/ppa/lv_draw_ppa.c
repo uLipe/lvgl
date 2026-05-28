@@ -224,15 +224,11 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 lv_layer_t * src_layer = (lv_layer_t *)dsc->src;
                 if(src_layer == NULL || src_layer->draw_buf == NULL) return 0;
 
-                /* Recolor on layers needs an intermediate buffer: it will be handled
-                 * by the tile composer (Phase 2) once enabled; for now the SW path
-                 * keeps responsibility for that case. */
                 bool common_ok = dsc->clip_radius == 0
                                  && dsc->bitmap_mask_src == NULL
                                  && dsc->sup == NULL
                                  && dsc->tile == 0
                                  && dsc->blend_mode == LV_BLEND_MODE_NORMAL
-                                 && dsc->recolor_opa <= LV_OPA_MIN
                                  && dsc->skew_y == 0
                                  && dsc->skew_x == 0;
                 if(!common_ok) return 0;
@@ -241,6 +237,20 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                                     && dsc->scale_y == LV_SCALE_NONE
                                     && dsc->rotation == 0);
                 bool layer_ok = false;
+
+#if LV_USE_PPA_TILE_COMPOSER
+                /* Recolor combined with global opa needs the tile composer; check
+                 * eligibility first because identity_layer below would otherwise
+                 * reject these tasks via the recolor_opa<=MIN constraint. */
+                if(is_identity && lv_draw_ppa_layer_recolor_opa_supported(dsc)) {
+                    layer_ok = true;
+                }
+#endif
+
+                /* The simpler paths below cannot recolor a layer; bail out before
+                 * checking them when LVGL asks for recolor and we did not catch it
+                 * with the tile composer above. */
+                if(!layer_ok && dsc->recolor_opa > LV_OPA_MIN) return 0;
 #if LV_USE_PPA_LAYER
                 /* Composer path: identity layer is just a blit/blend, dispatched via
                  * lv_draw_ppa_img which already handles opa (ALPHA_SCALE) and the
@@ -364,9 +374,17 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
             lv_draw_ppa_img(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
             break;
 #if LV_USE_PPA_LAYER || LV_USE_PPA_TRANSFORM
-        case LV_DRAW_TASK_TYPE_LAYER:
-            lv_draw_ppa_layer(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
-            break;
+        case LV_DRAW_TASK_TYPE_LAYER: {
+                lv_draw_image_dsc_t * dsc = (lv_draw_image_dsc_t *)t->draw_dsc;
+#if LV_USE_PPA_TILE_COMPOSER
+                if(lv_draw_ppa_layer_recolor_opa_supported(dsc)) {
+                    lv_draw_ppa_layer_composite(t, dsc, &area);
+                    break;
+                }
+#endif
+                lv_draw_ppa_layer(t, dsc, &area);
+                break;
+            }
 #endif
         default:
             break;
@@ -417,6 +435,14 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_finalize_task(lv_draw_ppa_unit_t * u)
             lv_draw_buf_invalidate_cache(buf, &area);
         }
     }
+
+#if LV_USE_PPA_TILE_COMPOSER
+    /* Hardware is done reading the intermediate tile; safe to recycle it. */
+    if(u->pending_tile) {
+        lv_draw_ppa_tile_release(u, u->pending_tile);
+        u->pending_tile = NULL;
+    }
+#endif
 
     t->state = LV_DRAW_TASK_STATE_FINISHED;
     u->task_act = NULL;

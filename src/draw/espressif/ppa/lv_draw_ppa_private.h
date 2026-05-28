@@ -79,6 +79,10 @@ typedef struct lv_draw_ppa_unit {
     lv_draw_ppa_tile_t tiles[LV_PPA_TILE_POOL_SIZE];
     /* Round-robin cursor used by the tile allocator. */
     uint32_t tile_cursor;
+    /* Tile borrowed for the active task. The release is deferred to
+     * ppa_finalize_task so the buffer is not reused while the last hardware
+     * pass that consumes it is still pending in the PPA queue. */
+    lv_draw_ppa_tile_t * pending_tile;
 #endif
 } lv_draw_ppa_unit_t;
 
