@@ -9,6 +9,7 @@
 
 #include "lv_draw_ppa_private.h"
 #include "lv_draw_ppa.h"
+#include "../../lv_draw_image_private.h"
 
 #if LV_USE_PPA
 
@@ -36,6 +37,7 @@ static int32_t ppa_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
 static int32_t ppa_delete(lv_draw_unit_t * draw_unit);
 static void  ppa_execute_drawing(lv_draw_ppa_unit_t * u);
 static bool ppa_rotation_supported(int32_t rotation);
+static bool ppa_srm_clip_ok(const lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc);
 #if LV_USE_PPA_ASYNC
     static int32_t ppa_wait_for_finish(lv_draw_unit_t * draw_unit);
     static void ppa_finalize_task(lv_draw_ppa_unit_t * u);
@@ -59,7 +61,10 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
     draw_ppa_unit->base_unit.name         = "ESP_PPA";
 #if LV_USE_PPA_ASYNC
     draw_ppa_unit->base_unit.wait_for_finish_cb = ppa_wait_for_finish;
-    lv_thread_sync_init(&draw_ppa_unit->done_sync);
+    /* Static binary semaphore avoids a heap allocation and does not depend on
+     * LV_USE_OS being set to a real RTOS port. */
+    draw_ppa_unit->done_sem = xSemaphoreCreateBinaryStatic(&draw_ppa_unit->done_sem_buffer);
+    LV_ASSERT_NULL(draw_ppa_unit->done_sem);
     atomic_init(&draw_ppa_unit->pending_ops, 0);
 #endif
 
@@ -166,6 +171,18 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_init(void)
 #if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
     lv_draw_ppa_unit_instance = draw_ppa_unit;
 #endif
+
+    draw_ppa_unit->a8_scratch_size = LV_DRAW_PPA_A8_SCRATCH_BYTES;
+    draw_ppa_unit->a8_scratch = heap_caps_malloc(draw_ppa_unit->a8_scratch_size,
+                                                 MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if(draw_ppa_unit->a8_scratch == NULL) {
+        draw_ppa_unit->a8_scratch = heap_caps_malloc(draw_ppa_unit->a8_scratch_size,
+                                                     MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM);
+    }
+    if(draw_ppa_unit->a8_scratch == NULL) {
+        LV_LOG_WARN("PPA A8 scratch alloc failed; semi-transparent fills use fill alpha only");
+        draw_ppa_unit->a8_scratch_size = 0;
+    }
 }
 
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_deinit(void)
@@ -186,7 +203,7 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
                 const lv_draw_fill_dsc_t * dsc = (lv_draw_fill_dsc_t *)t->draw_dsc;
-                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
 
                 bool fill_ok = false;
 
@@ -198,7 +215,8 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
 #if LV_USE_PPA_GRADIENT
                 /* Two-stop horizontal/vertical gradients accepted; multi-stop and
                  * angled directions stay on SW. */
-                if(!fill_ok && dsc->radius == 0 && dsc->grad.stops_count == 2
+                if(!fill_ok && dsc->radius == 0 && dsc->grad.stops_count >= 2
+                   && dsc->grad.stops_count <= LV_GRADIENT_MAX_STOPS
                    && (dsc->grad.dir == LV_GRAD_DIR_HOR || dsc->grad.dir == LV_GRAD_DIR_VER)) {
                     fill_ok = true;
                 }
@@ -226,9 +244,7 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
 #if LV_USE_PPA_BORDER
         case LV_DRAW_TASK_TYPE_BORDER: {
                 const lv_draw_border_dsc_t * dsc = (lv_draw_border_dsc_t *)t->draw_dsc;
-                /* Only sharp-corner, opaque borders fit the strip-fill decomposition. */
-                if(dsc->radius != 0) return 0;
-                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
                 if(dsc->width <= 0) return 0;
                 if(dsc->side == LV_BORDER_SIDE_NONE) return 0;
 
@@ -259,9 +275,8 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
 #if LV_USE_PPA_LINE
         case LV_DRAW_TASK_TYPE_LINE: {
                 const lv_draw_line_dsc_t * dsc = (lv_draw_line_dsc_t *)t->draw_dsc;
-                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
                 if(dsc->dash_width != 0 || dsc->dash_gap != 0) return 0;
-                if(dsc->round_start || dsc->round_end) return 0;
                 if(dsc->points != NULL) return 0;
                 if(dsc->width <= 0) return 0;
                 int32_t p1x = (int32_t)dsc->p1.x;
@@ -281,7 +296,7 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
 #if LV_USE_PPA_TRIANGLE
         case LV_DRAW_TASK_TYPE_TRIANGLE: {
                 const lv_draw_triangle_dsc_t * dsc = (lv_draw_triangle_dsc_t *)t->draw_dsc;
-                if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return 0;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
                 if(dsc->grad.dir != LV_GRAD_DIR_NONE) return 0;
                 /* Confirm at least one pair of axes is shared so the
                  * decomposition reduces to scanline fills. */
@@ -305,6 +320,54 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
             }
 #endif
 
+#if 0
+        /* LABEL/LETTER via PPA A8 blend + horizontal span merge: under evaluation, not enabled. */
+        case LV_DRAW_TASK_TYPE_LABEL: {
+                const lv_draw_label_dsc_t * dsc = (lv_draw_label_dsc_t *)t->draw_dsc;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
+                if(dsc->rotation != 0) return 0;
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+        case LV_DRAW_TASK_TYPE_LETTER: {
+                const lv_draw_letter_dsc_t * dsc = (lv_draw_letter_dsc_t *)t->draw_dsc;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
+#if !LV_USE_DRAW_SW
+                if(dsc->rotation != 0) return 0;
+#endif
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
+#if LV_USE_PPA_ARC
+        case LV_DRAW_TASK_TYPE_ARC: {
+                const lv_draw_arc_dsc_t * dsc = (lv_draw_arc_dsc_t *)t->draw_dsc;
+                if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return 0;
+                if(dsc->width <= 0) return 0;
+                if(dsc->img_src != NULL) return 0;
+                if(dsc->start_angle == dsc->end_angle) return 0;
+                /* Partial arcs: SW mask+blend per row beats PPA solid_op storm; full ring uses border. */
+                if(!(dsc->start_angle + 360 == dsc->end_angle || dsc->start_angle == dsc->end_angle + 360)) {
+                    return 0;
+                }
+
+                if(t->preference_score > DRAW_UNIT_PPA_PREF_SCORE) {
+                    t->preference_score = DRAW_UNIT_PPA_PREF_SCORE;
+                    t->preferred_draw_unit_id = DRAW_UNIT_ID_PPA;
+                }
+                return 1;
+            }
+#endif
+
         case LV_DRAW_TASK_TYPE_IMAGE: {
                 lv_draw_image_dsc_t * dsc = t->draw_dsc;
                 bool common_ok = dsc->header.cf < LV_COLOR_FORMAT_PROPRIETARY_START
@@ -314,14 +377,14 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                                  && dsc->tile == 0
                                  && dsc->blend_mode == LV_BLEND_MODE_NORMAL
                                  && dsc->recolor_opa <= LV_OPA_MIN
-                                 && dsc->opa >= (lv_opa_t)LV_OPA_MAX
+                                 && dsc->opa > (lv_opa_t)LV_OPA_MIN
                                  && dsc->skew_y == 0
                                  && dsc->skew_x == 0
-                                 && lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_VARIABLE;
+                                 && (lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_VARIABLE
+                                     || lv_image_src_get_type(dsc->src) == LV_IMAGE_SRC_FILE);
                 if(!common_ok) return 0;
 
                 bool is_identity = (dsc->scale_x == LV_SCALE_NONE && dsc->scale_y == LV_SCALE_NONE && dsc->rotation == 0);
-                bool clip_is_full = lv_area_is_equal(&t->area, &t->clip_area);
 
                 bool ppa_ok = false;
 #if LV_USE_PPA_IMG
@@ -330,7 +393,7 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 }
 #endif
 #if LV_USE_PPA_TRANSFORM
-                if(!ppa_ok && clip_is_full
+                if(!ppa_ok && ppa_srm_clip_ok(t, dsc)
                    && ppa_rotation_supported(dsc->rotation)
                    && ppa_srm_src_cf_supported(dsc->header.cf)
                    && ppa_srm_dest_cf_supported(dsc->base.layer->color_format)) {
@@ -363,6 +426,7 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 bool is_identity = (dsc->scale_x == LV_SCALE_NONE
                                     && dsc->scale_y == LV_SCALE_NONE
                                     && dsc->rotation == 0);
+                LV_UNUSED(is_identity); /* Used only by LAYER and TILE_COMPOSER paths below. */
                 bool layer_ok = false;
 
 #if LV_USE_PPA_TILE_COMPOSER
@@ -389,15 +453,16 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_evaluate(lv_draw_unit_t * u, lv_draw_ta
                 }
 #endif
 #if LV_USE_PPA_TRANSFORM
-                /* Transform path: SRM client requires opaque alpha and the full
-                 * transformed area within the clip window. */
                 if(!layer_ok
-                   && dsc->opa >= (lv_opa_t)LV_OPA_MAX
-                   && lv_area_is_equal(&t->area, &t->clip_area)
-                   && ppa_rotation_supported(dsc->rotation)
-                   && ppa_srm_src_cf_supported(src_layer->draw_buf->header.cf)
-                   && ppa_srm_dest_cf_supported(dsc->base.layer->color_format)) {
-                    layer_ok = true;
+                   && dsc->opa > (lv_opa_t)LV_OPA_MIN
+                   && ppa_rotation_supported(dsc->rotation)) {
+                    lv_draw_image_dsc_t layer_img_dsc = *dsc;
+                    layer_img_dsc.header = src_layer->draw_buf->header;
+                    if(ppa_srm_clip_ok(t, &layer_img_dsc)
+                       && ppa_srm_src_cf_supported(src_layer->draw_buf->header.cf)
+                       && ppa_srm_dest_cf_supported(dsc->base.layer->color_format)) {
+                        layer_ok = true;
+                    }
                 }
 #endif
                 if(!layer_ok) return 0;
@@ -432,22 +497,38 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_dispatch(lv_draw_unit_t * draw_unit, lv
     ppa_execute_drawing(u);
 
 #if LV_USE_PPA_ASYNC
-    /* Async path: if the worker queued at least one PPA sub-op the ISR will
-     * signal `done_sync` once the last one finishes. If it submitted nothing
-     * (fully clipped area, geometry rejected by the hardware constraints, ...)
-     * the ISR will never fire, and leaving `task_act` set would stall every
-     * dependent task in the layer because LVGL only calls `wait_for_finish_cb`
-     * when *all* units idle simultaneously. Finalize synchronously in that
-     * case so the scheduler can move on. */
-    if(atomic_load(&u->pending_ops) == 0) {
-        ppa_finalize_task(u);
-        return 1;
+    /* Async path: every `ppa_do_*` returned right after pushing into the PPA
+     * driver queue, so several sub-ops can be in flight simultaneously when
+     * the per-client `max_pending_trans_num` is greater than one. We still
+     * have to wait for the last one before reporting the task as finished
+     * because LVGL's `lv_draw_wait_for_finish` is a no-op when LV_USE_OS ==
+     * LV_OS_NONE (its body is wrapped in `#if LV_USE_OS`), so the matching
+     * `wait_for_finish_cb` would never run on the Espressif port that hosts
+     * LVGL inside an esp_lvgl_port FreeRTOS task. Waiting here keeps the
+     * scheduler unblocked, releases the CPU through xSemaphoreTake (the
+     * IDLE task can run, watchdog fed) and still benefits from the producer
+     * pipelining sub-ops into the PPA queue. */
+    if(atomic_load(&u->pending_ops) > 0) {
+#if LV_USE_PPA_STATS
+        int64_t t0 = esp_timer_get_time();
+#endif
+        xSemaphoreTake(u->done_sem, portMAX_DELAY);
+#if LV_USE_PPA_STATS
+        int64_t dt = esp_timer_get_time() - t0;
+        if(dt > 0) atomic_fetch_add(&u->stat_total_wait_us, (unsigned long long)dt);
+#endif
     }
-    return LV_DRAW_UNIT_IDLE;
+    ppa_finalize_task(u);
+    return 1;
 #else
     u->task_act->state = LV_DRAW_TASK_STATE_FINISHED;
     u->task_act = NULL;
     lv_draw_dispatch_request();
+#if LV_USE_PPA_STATS
+    /* Sync finalization path mirrors what ppa_finalize_task does in async mode
+     * so the telemetry counter reflects every task accepted by the unit. */
+    atomic_fetch_add(&u->stat_total_tasks, 1u);
+#endif
 
     return 1;
 #endif
@@ -462,8 +543,16 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_delete(lv_draw_unit_t * draw_unit)
     ppa_unregister_client(u->srm_client);
     ppa_unregister_client(u->fill_client);
     ppa_unregister_client(u->blend_client);
+    if(u->a8_scratch) {
+        heap_caps_free(u->a8_scratch);
+        u->a8_scratch = NULL;
+        u->a8_scratch_size = 0;
+    }
 #if LV_USE_PPA_ASYNC
-    lv_thread_sync_delete(&u->done_sync);
+    if(u->done_sem) {
+        vSemaphoreDelete(u->done_sem);
+        u->done_sem = NULL;
+    }
 #endif
 #if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
     if(lv_draw_ppa_unit_instance == u) lv_draw_ppa_unit_instance = NULL;
@@ -524,6 +613,20 @@ static void LV_ATTRIBUTE_FAST_MEM ppa_execute_drawing(lv_draw_ppa_unit_t * u)
             lv_draw_ppa_triangle(t, (lv_draw_triangle_dsc_t *)t->draw_dsc);
             break;
 #endif
+#if LV_USE_PPA_ARC
+        case LV_DRAW_TASK_TYPE_ARC:
+            lv_draw_ppa_arc(t, (lv_draw_arc_dsc_t *)t->draw_dsc, &t->area);
+            break;
+#endif
+#if 0
+        /* LABEL/LETTER: see evaluate() — PPA text path disabled while span-merge is refined. */
+        case LV_DRAW_TASK_TYPE_LABEL:
+            lv_draw_ppa_label(t, (lv_draw_label_dsc_t *)t->draw_dsc, &t->area);
+            break;
+        case LV_DRAW_TASK_TYPE_LETTER:
+            lv_draw_ppa_letter(t, (lv_draw_letter_dsc_t *)t->draw_dsc, &t->area);
+            break;
+#endif
         case LV_DRAW_TASK_TYPE_IMAGE:
             lv_draw_ppa_img(t, (lv_draw_image_dsc_t *)t->draw_dsc, &area);
             break;
@@ -556,6 +659,29 @@ static bool LV_ATTRIBUTE_FAST_MEM ppa_rotation_supported(int32_t rotation)
     return (r == 0 || r == 900 || r == 1800 || r == 2700);
 }
 
+static bool LV_ATTRIBUTE_FAST_MEM ppa_srm_clip_ok(const lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc)
+{
+    if(dsc->scale_x == LV_SCALE_NONE && dsc->scale_y == LV_SCALE_NONE && dsc->rotation == 0) {
+        return true;
+    }
+
+    int32_t w = dsc->header.w;
+    int32_t h = dsc->header.h;
+    if(w <= 0 || h <= 0) return false;
+
+    int32_t scale_x_abs = dsc->scale_x < 0 ? -dsc->scale_x : dsc->scale_x;
+    int32_t scale_y_abs = dsc->scale_y < 0 ? -dsc->scale_y : dsc->scale_y;
+    if(scale_x_abs == 0 || scale_y_abs == 0) return false;
+
+    lv_area_t transformed;
+    lv_image_buf_get_transformed_area(&transformed, w, h, dsc->rotation, scale_x_abs, scale_y_abs, &dsc->pivot);
+    lv_area_move(&transformed, t->area.x1, t->area.y1);
+
+    lv_area_t inter;
+    if(!lv_area_intersect(&inter, &transformed, &t->clip_area)) return false;
+    return lv_area_is_equal(&inter, &transformed);
+}
+
 #if LV_USE_PPA_ASYNC
 
 bool LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_trans_done_cb(ppa_client_handle_t client, ppa_event_data_t * evt,
@@ -564,12 +690,13 @@ bool LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_trans_done_cb(ppa_client_handle_t client,
     LV_UNUSED(client);
     LV_UNUSED(evt);
     lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)user_data;
+    BaseType_t higher_priority_woken = pdFALSE;
     /* fetch_sub returns the value before subtraction; the last completion (counter
      * was 1) is the one that releases the dispatcher waiting in wait_for_finish_cb. */
     if(atomic_fetch_sub(&u->pending_ops, 1) == 1) {
-        lv_thread_sync_signal_isr(&u->done_sync);
+        xSemaphoreGiveFromISR(u->done_sem, &higher_priority_woken);
     }
-    return false;
+    return higher_priority_woken == pdTRUE;
 }
 
 static void LV_ATTRIBUTE_FAST_MEM ppa_finalize_task(lv_draw_ppa_unit_t * u)
@@ -619,7 +746,10 @@ static int32_t LV_ATTRIBUTE_FAST_MEM ppa_wait_for_finish(lv_draw_unit_t * draw_u
 #if LV_USE_PPA_STATS
         int64_t t0 = esp_timer_get_time();
 #endif
-        lv_thread_sync_wait(&u->done_sync);
+        /* portMAX_DELAY: the PPA hardware finishes any submitted op in a
+         * deterministic time, so an indefinite wait is the right policy here.
+         * If the timeout becomes a concern we can lower it via Kconfig later. */
+        xSemaphoreTake(u->done_sem, portMAX_DELAY);
 #if LV_USE_PPA_STATS
         int64_t dt = esp_timer_get_time() - t0;
         if(dt > 0) atomic_fetch_add(&u->stat_total_wait_us, (unsigned long long)dt);
