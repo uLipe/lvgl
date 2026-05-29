@@ -40,7 +40,7 @@ static void enqueue_strip(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_round_fill(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc,
                                                   const lv_area_t * coords)
 {
-    if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return;
+    if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return;
     if(dsc->radius <= 0) return;
 
     lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)t->draw_unit;
@@ -56,7 +56,7 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_round_fill(lv_draw_task_t * t, const lv_d
     if(r > short_side / 2) r = short_side / 2;
     if(r <= 0) return;
 
-    uint32_t color = lv_color_to_u32(dsc->color);
+    uint32_t color = lv_draw_ppa_fill_color_u32(dsc->color, dsc->opa);
 
     /* Body: large rectangular band between the top and bottom corner regions. */
     {
@@ -133,26 +133,7 @@ static void LV_ATTRIBUTE_FAST_MEM enqueue_strip(lv_draw_ppa_unit_t * u, lv_draw_
     if(!lv_area_intersect(&fill_area, strip, clip)) return;
     lv_area_move(&fill_area, -buf_area->x1, -buf_area->y1);
 
-    ppa_fill_oper_config_t cfg = {0};
-    cfg.fill_argb_color.val = color;
-    cfg.out.block_offset_x  = fill_area.x1;
-    cfg.out.block_offset_y  = fill_area.y1;
-    cfg.out.fill_cm         = lv_color_format_to_ppa_fill(draw_buf->header.cf);
-    cfg.fill_block_w        = lv_area_get_width(&fill_area);
-    cfg.fill_block_h        = lv_area_get_height(&fill_area);
-    cfg.out.buffer          = draw_buf->data;
-    cfg.out.buffer_size     = draw_buf->data_size;
-    cfg.out.pic_w           = draw_buf->header.w;
-    cfg.out.pic_h           = draw_buf->header.h;
-    cfg.mode                = LV_PPA_TRANS_MODE;
-    cfg.user_data           = u;
-
-    lv_draw_ppa_begin_op(u);
-    esp_err_t ret = ppa_do_fill(u->fill_client, &cfg);
-    if(ret != ESP_OK) {
-        lv_draw_ppa_cancel_op(u);
-        LV_LOG_ERROR("PPA round fill scanline failed: %d", ret);
-    }
+    lv_draw_ppa_solid_op(u, draw_buf, &fill_area, color);
 }
 
 #endif /* LV_USE_PPA_ROUND_FILL */

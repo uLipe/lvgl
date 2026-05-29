@@ -40,6 +40,10 @@ extern "C" {
 #include <hal/color_hal.h>
 #include <esp_cache.h>
 #include <esp_log.h>
+#if LV_USE_PPA_ASYNC
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#endif
 /*********************
 *      DEFINES
 *********************/
@@ -65,14 +69,23 @@ typedef struct lv_draw_ppa_unit {
     ppa_client_handle_t fill_client;
     ppa_client_handle_t blend_client;
     uint8_t * buf;
+    /* DMA-capable A8 mask for solid-color blends when opa < LV_OPA_MAX. Tiled to
+     * LV_PPA_TILE_SIZE so a single allocation covers the worst strip size. */
+    uint8_t * a8_scratch;
+    size_t    a8_scratch_size;
 #if LV_USE_PPA_ASYNC
-    /* Synchronization primitive signaled from the PPA ISR when the last sub-operation
-     * of the active LVGL task completes. The draw scheduler waits on this from
-     * `wait_for_finish_cb` before consuming the rendered buffer. */
-    lv_thread_sync_t done_sync;
+    /* Binary semaphore signaled from the PPA ISR when the last sub-operation of
+     * the active LVGL task completes. The draw scheduler waits on this from
+     * `wait_for_finish_cb` before consuming the rendered buffer. The semaphore
+     * is allocated statically so the draw unit lifecycle does not depend on a
+     * heap allocation, and the FreeRTOS primitives are used directly because
+     * `lv_thread_sync_*` collapses into no-ops when LV_USE_OS = LV_OS_NONE,
+     * which would silently break the async path on the LVGL ESP-IDF port. */
+    SemaphoreHandle_t done_sem;
+    StaticSemaphore_t done_sem_buffer;
     /* Number of PPA sub-operations enqueued for the current LVGL task. A single LVGL
      * draw task may decompose into several PPA ops (e.g. border = 4 fills). Each
-     * ISR completion decrements the counter; reaching zero signals `done_sync`. */
+     * ISR completion decrements the counter; reaching zero signals `done_sem`. */
     atomic_int pending_ops;
 #endif
 #if LV_USE_PPA_TILE_COMPOSER
@@ -100,6 +113,14 @@ typedef struct lv_draw_ppa_unit {
     atomic_ullong stat_total_wait_us;
 #endif
 } lv_draw_ppa_unit_t;
+
+void lv_draw_ppa_solid_op(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
+                          const lv_area_t * rel_area, uint32_t argb_color);
+
+void lv_draw_ppa_glyph_blend(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
+                           const lv_area_t * mask_area, const uint8_t * mask, uint32_t mask_stride,
+                           lv_color_t color, lv_opa_t opa, const lv_area_t * clip_area,
+                           const lv_area_t * buf_area);
 
 #if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
 /* Single-instance pointer so the runtime/stats APIs can reach the draw unit
@@ -139,45 +160,48 @@ void lv_draw_ppa_tile_release(lv_draw_ppa_unit_t * u, lv_draw_ppa_tile_t * tile)
 *   STATIC FUNCTIONS
 **********************/
 
+/* Color-format support mirrors what the PPA hardware advertises in
+ * ppa_blend_color_mode_t / ppa_srm_color_mode_t / ppa_fill_color_mode_t.
+ * The matching `lv_color_format_to_ppa_*` helpers below pair LVGL formats
+ * with the closest hardware mode and assume the worker drives `byte_swap`
+ * or `*_alpha_update_mode` when the LVGL pixel layout is not 1:1 with the
+ * hardware (e.g. XRGB ignoring the 4th byte, RGB565_SWAPPED swapping bytes,
+ * A8 masks pulling fg_fix_rgb_val for the colour). */
+
 static inline bool ppa_src_cf_supported(lv_color_format_t cf)
 {
-    bool is_cf_supported = false;
-
     switch(cf) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
         case LV_COLOR_FORMAT_RGB888:
         case LV_COLOR_FORMAT_ARGB8888:
         case LV_COLOR_FORMAT_XRGB8888:
-            is_cf_supported = true;
-            break;
+        case LV_COLOR_FORMAT_A8:
+            return true;
         default:
-            break;
+            return false;
     }
-
-    return is_cf_supported;
 }
 
 static inline bool ppa_dest_cf_supported(lv_color_format_t cf)
 {
-    bool is_cf_supported = false;
-
     switch(cf) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
         case LV_COLOR_FORMAT_RGB888:
         case LV_COLOR_FORMAT_ARGB8888:
-            is_cf_supported = true;
-            break;
+        case LV_COLOR_FORMAT_XRGB8888:
+            return true;
         default:
-            break;
+            return false;
     }
-
-    return is_cf_supported;
 }
 
 static inline bool ppa_srm_src_cf_supported(lv_color_format_t cf)
 {
     switch(cf) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
         case LV_COLOR_FORMAT_RGB888:
         case LV_COLOR_FORMAT_ARGB8888:
         case LV_COLOR_FORMAT_XRGB8888:
@@ -191,22 +215,31 @@ static inline bool ppa_srm_dest_cf_supported(lv_color_format_t cf)
 {
     switch(cf) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
         case LV_COLOR_FORMAT_RGB888:
         case LV_COLOR_FORMAT_ARGB8888:
+        case LV_COLOR_FORMAT_XRGB8888:
             return true;
         default:
             return false;
     }
 }
 
+static inline uint32_t lv_draw_ppa_fill_color_u32(lv_color_t color, lv_opa_t opa)
+{
+    return (lv_color_to_u32(color) & 0x00FFFFFFu) | ((uint32_t)opa << 24);
+}
+
 static inline ppa_fill_color_mode_t lv_color_format_to_ppa_fill(lv_color_format_t lv_fmt)
 {
     switch(lv_fmt) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
             return PPA_FILL_COLOR_MODE_RGB565;
         case LV_COLOR_FORMAT_RGB888:
             return PPA_FILL_COLOR_MODE_RGB888;
         case LV_COLOR_FORMAT_ARGB8888:
+        case LV_COLOR_FORMAT_XRGB8888:
             return PPA_FILL_COLOR_MODE_ARGB8888;
         default:
             return PPA_FILL_COLOR_MODE_RGB565;
@@ -217,12 +250,18 @@ static inline ppa_blend_color_mode_t lv_color_format_to_ppa_blend(lv_color_forma
 {
     switch(lv_fmt) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
             return PPA_BLEND_COLOR_MODE_RGB565;
         case LV_COLOR_FORMAT_RGB888:
             return PPA_BLEND_COLOR_MODE_RGB888;
         case LV_COLOR_FORMAT_ARGB8888:
         case LV_COLOR_FORMAT_XRGB8888:
             return PPA_BLEND_COLOR_MODE_ARGB8888;
+        case LV_COLOR_FORMAT_A8:
+            /* A8 is only legal on the FG input of a blend; the worker that
+             * uses it must populate `in_fg.blend_cm` with this value and
+             * supply the colour through `fg_fix_rgb_val`. */
+            return PPA_BLEND_COLOR_MODE_A8;
         default:
             return PPA_BLEND_COLOR_MODE_RGB565;
     }
@@ -232,6 +271,7 @@ static inline ppa_srm_color_mode_t lv_color_format_to_ppa_srm(lv_color_format_t 
 {
     switch(lv_fmt) {
         case LV_COLOR_FORMAT_RGB565:
+        case LV_COLOR_FORMAT_RGB565_SWAPPED:
             return PPA_SRM_COLOR_MODE_RGB565;
         case LV_COLOR_FORMAT_RGB888:
             return PPA_SRM_COLOR_MODE_RGB888;
@@ -241,6 +281,14 @@ static inline ppa_srm_color_mode_t lv_color_format_to_ppa_srm(lv_color_format_t 
         default:
             return PPA_SRM_COLOR_MODE_RGB565;
     }
+}
+
+/* Returns true if the LVGL format stores the bytes in the opposite endianess
+ * of what the PPA reads, so the caller can flip `byte_swap` on the matching
+ * picture-block descriptor. */
+static inline bool lv_color_format_needs_ppa_byte_swap(lv_color_format_t cf)
+{
+    return cf == LV_COLOR_FORMAT_RGB565_SWAPPED;
 }
 
 /* Common transfer mode used by every `ppa_do_*` call. With async enabled the PPA driver
@@ -291,6 +339,8 @@ static inline void lv_draw_ppa_cancel_op(lv_draw_ppa_unit_t * u)
     atomic_fetch_add(&u->stat_failed_ops, 1u);
 #endif
 }
+
+#define LV_DRAW_PPA_A8_SCRATCH_BYTES ((size_t)LV_PPA_TILE_SIZE * (size_t)LV_PPA_TILE_SIZE)
 
 #define PPA_ALIGN_UP(x, align)  ((((x) + (align) - 1) / (align)) * (align))
 #define PPA_PTR_ALIGN_UP(p, align) \

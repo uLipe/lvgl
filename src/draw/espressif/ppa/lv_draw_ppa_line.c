@@ -19,23 +19,16 @@
 static void enqueue_segment(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
                             const lv_area_t * strip, const lv_area_t * clip,
                             const lv_area_t * buf_area, uint32_t color);
+static void draw_round_cap(lv_draw_task_t * t, int32_t cx, int32_t cy, int32_t width,
+                           lv_color_t color, lv_opa_t opa);
 
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
 
-/* Axis-aligned line draw via PPA fill. The geometry the engine can express is
- * a rectangle, so only purely horizontal or vertical line segments fit; any
- * diagonal slope, dashed pattern or rounded ends would require coverage that
- * the fill client cannot produce. The line thickness is centred around the
- * geometric segment (`p1`/`p2`) using `width / 2` extents on each side, which
- * matches what `lv_draw_sw_line` does for thick perpendicular lines. The
- * `points` array path (multi-segment polylines) stays on SW: the iteration
- * helper would defeat the up-front evaluation contract used by the draw unit
- * scheduler. */
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_line_dsc_t * dsc)
 {
-    if(dsc->opa < (lv_opa_t)LV_OPA_MAX) return;
+    if(dsc->opa <= (lv_opa_t)LV_OPA_MIN) return;
     if(dsc->width <= 0) return;
 
     lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)t->draw_unit;
@@ -53,7 +46,6 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_li
 
     lv_area_t strip;
     if(p1y == p2y) {
-        /* Horizontal line: thickness extends in y. */
         int32_t x1 = LV_MIN(p1x, p2x);
         int32_t x2 = LV_MAX(p1x, p2x);
         strip.x1 = x1;
@@ -62,7 +54,6 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_li
         strip.y2 = p1y + extra;
     }
     else if(p1x == p2x) {
-        /* Vertical line: thickness extends in x. */
         int32_t y1 = LV_MIN(p1y, p2y);
         int32_t y2 = LV_MAX(p1y, p2y);
         strip.x1 = p1x - half;
@@ -71,13 +62,16 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_li
         strip.y2 = y2;
     }
     else {
-        return; /* should be filtered out by ppa_evaluate already */
+        return;
     }
 
     if(strip.x2 < strip.x1 || strip.y2 < strip.y1) return;
 
-    uint32_t color = lv_color_to_u32(dsc->color);
+    uint32_t color = lv_draw_ppa_fill_color_u32(dsc->color, dsc->opa);
     enqueue_segment(u, draw_buf, &strip, &t->clip_area, &layer->buf_area, color);
+
+    if(dsc->round_start) draw_round_cap(t, p1x, p1y, dsc->width, dsc->color, dsc->opa);
+    if(dsc->round_end) draw_round_cap(t, p2x, p2y, dsc->width, dsc->color, dsc->opa);
 }
 
 /**********************
@@ -92,26 +86,52 @@ static void LV_ATTRIBUTE_FAST_MEM enqueue_segment(lv_draw_ppa_unit_t * u, lv_dra
     if(!lv_area_intersect(&fill_area, strip, clip)) return;
     lv_area_move(&fill_area, -buf_area->x1, -buf_area->y1);
 
-    ppa_fill_oper_config_t cfg = {0};
-    cfg.fill_argb_color.val = color;
-    cfg.out.block_offset_x  = fill_area.x1;
-    cfg.out.block_offset_y  = fill_area.y1;
-    cfg.out.fill_cm         = lv_color_format_to_ppa_fill(draw_buf->header.cf);
-    cfg.fill_block_w        = lv_area_get_width(&fill_area);
-    cfg.fill_block_h        = lv_area_get_height(&fill_area);
-    cfg.out.buffer          = draw_buf->data;
-    cfg.out.buffer_size     = draw_buf->data_size;
-    cfg.out.pic_w           = draw_buf->header.w;
-    cfg.out.pic_h           = draw_buf->header.h;
-    cfg.mode                = LV_PPA_TRANS_MODE;
-    cfg.user_data           = u;
-
-    lv_draw_ppa_begin_op(u);
-    esp_err_t ret = ppa_do_fill(u->fill_client, &cfg);
-    if(ret != ESP_OK) {
-        lv_draw_ppa_cancel_op(u);
-        LV_LOG_ERROR("PPA line fill failed: %d", ret);
-    }
+    lv_draw_ppa_solid_op(u, draw_buf, &fill_area, color);
 }
+
+#if LV_USE_PPA_ROUND_FILL
+
+static void LV_ATTRIBUTE_FAST_MEM draw_round_cap(lv_draw_task_t * t, int32_t cx, int32_t cy, int32_t width,
+                                                 lv_color_t color, lv_opa_t opa)
+{
+    if(width <= 0) return;
+
+    int32_t r = width / 2;
+    lv_area_t cap = {
+        .x1 = cx - r,
+        .y1 = cy - r,
+        .x2 = cx + r - 1 + (width & 1),
+        .y2 = cy + r - 1 + (width & 1),
+    };
+
+    lv_draw_fill_dsc_t fill_dsc;
+    lv_draw_fill_dsc_init(&fill_dsc);
+    fill_dsc.color = color;
+    fill_dsc.opa = opa;
+    fill_dsc.radius = LV_RADIUS_CIRCLE;
+    lv_draw_ppa_round_fill(t, &fill_dsc, &cap);
+}
+
+#else
+
+static void LV_ATTRIBUTE_FAST_MEM draw_round_cap(lv_draw_task_t * t, int32_t cx, int32_t cy, int32_t width,
+                                                 lv_color_t color, lv_opa_t opa)
+{
+    lv_draw_ppa_unit_t * u = (lv_draw_ppa_unit_t *)t->draw_unit;
+    lv_layer_t * layer = t->target_layer;
+    int32_t r = width / 2;
+    lv_area_t cap = {
+        .x1 = cx - r,
+        .y1 = cy - r,
+        .x2 = cx + r,
+        .y2 = cy + r,
+    };
+    lv_area_t clipped;
+    if(!lv_area_intersect(&clipped, &cap, &t->clip_area)) return;
+    lv_area_move(&clipped, -layer->buf_area.x1, -layer->buf_area.y1);
+    lv_draw_ppa_solid_op(u, layer->draw_buf, &clipped, lv_draw_ppa_fill_color_u32(color, opa));
+}
+
+#endif /* LV_USE_PPA_ROUND_FILL */
 
 #endif /* LV_USE_PPA_LINE */

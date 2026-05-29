@@ -17,6 +17,7 @@
  **********************/
 
 static uint32_t mix_color_u32(lv_color_t a, lv_color_t b, uint32_t mix_q8);
+static uint32_t grad_color_u32(const lv_grad_dsc_t * grad, uint8_t pos_frac, lv_opa_t fill_opa);
 static void enqueue_strip(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
                           const lv_area_t * strip, const lv_area_t * buf_area, uint32_t color);
 
@@ -24,17 +25,6 @@ static void enqueue_strip(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
  *   GLOBAL FUNCTIONS
  **********************/
 
-/* Approximate horizontal/vertical two-stop gradients with a configurable number
- * of solid-color strips (`LV_PPA_GRADIENT_STEPS`). Each strip is dispatched as
- * an independent PPA fill, so the whole task scales linearly with the step
- * count. We accept only the simple 2-stop case here; multi-stop, linear,
- * radial and conical paths require either a tile-composer driven blit chain
- * or full per-pixel rasterization and stay on the SW renderer for now.
- *
- * The mix between the two stops is done in a `uint32_t` accumulator so we can
- * preserve the alpha channel when the destination is ARGB8888. Coordinates
- * are translated into the layer-relative space before submission, exactly as
- * lv_draw_ppa_fill does for solid-color rectangles. */
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_gradient(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc,
                                                 const lv_area_t * coords)
 {
@@ -55,8 +45,6 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_gradient(lv_draw_task_t * t, const lv_dra
     int32_t total_h = lv_area_get_height(&rel_coords);
     if(total_w <= 0 || total_h <= 0) return;
 
-    lv_color_t color_a = dsc->grad.stops[0].color;
-    lv_color_t color_b = dsc->grad.stops[1].color;
     bool vertical = (dsc->grad.dir == LV_GRAD_DIR_VER);
 
     int32_t span = vertical ? total_h : total_w;
@@ -65,11 +53,17 @@ void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_gradient(lv_draw_task_t * t, const lv_dra
     if(steps <= 0) return;
 
     for(int32_t i = 0; i < steps; i++) {
-        /* Pick the strip color at the centre of each band so the boundary
-         * colours match what the SW renderer produces with a stops_count==2. */
         uint32_t mix_q8 = (uint32_t)((i * 2 + 1) * 256 / (steps * 2));
         if(mix_q8 > 256) mix_q8 = 256;
-        uint32_t color = mix_color_u32(color_a, color_b, mix_q8);
+        uint8_t pos_frac = (uint8_t)((mix_q8 * 255u) / 256u);
+        uint32_t color;
+        if(dsc->grad.stops_count == 2) {
+            color = mix_color_u32(dsc->grad.stops[0].color, dsc->grad.stops[1].color, mix_q8);
+            color = (color & 0x00FFFFFFu) | ((uint32_t)dsc->opa << 24);
+        }
+        else {
+            color = grad_color_u32(&dsc->grad, pos_frac, dsc->opa);
+        }
 
         lv_area_t strip;
         if(vertical) {
@@ -104,33 +98,49 @@ static uint32_t LV_ATTRIBUTE_FAST_MEM mix_color_u32(lv_color_t a, lv_color_t b, 
     return (0xFFu << 24) | (r << 16) | (g << 8) | blue;
 }
 
+static uint32_t LV_ATTRIBUTE_FAST_MEM grad_color_u32(const lv_grad_dsc_t * grad, uint8_t pos_frac,
+                                                   lv_opa_t fill_opa)
+{
+    uint8_t n = grad->stops_count;
+    if(n < 2) return 0;
+
+    if(pos_frac <= grad->stops[0].frac) {
+        return lv_draw_ppa_fill_color_u32(grad->stops[0].color,
+                                          (lv_opa_t)(((uint16_t)grad->stops[0].opa * fill_opa) >> 8));
+    }
+
+    for(uint8_t i = 0; i < n - 1; i++) {
+        if(pos_frac <= grad->stops[i + 1].frac) {
+            uint8_t f0 = grad->stops[i].frac;
+            uint8_t f1 = grad->stops[i + 1].frac;
+            if(f1 <= f0) {
+                return lv_draw_ppa_fill_color_u32(grad->stops[i + 1].color,
+                                                  (lv_opa_t)(((uint16_t)grad->stops[i + 1].opa * fill_opa) >> 8));
+            }
+            uint32_t mix_q8 = (uint32_t)(pos_frac - f0) * 256u / (uint32_t)(f1 - f0);
+            if(mix_q8 > 256) mix_q8 = 256;
+            lv_color_t c = grad->stops[i].color;
+            lv_color_t d = grad->stops[i + 1].color;
+            uint32_t rgb = mix_color_u32(c, d, mix_q8);
+            lv_opa_t opa = (lv_opa_t)(((uint16_t)grad->stops[i].opa * (256u - mix_q8)
+                                       + (uint16_t)grad->stops[i + 1].opa * mix_q8) >> 8);
+            opa = (lv_opa_t)(((uint16_t)opa * fill_opa) >> 8);
+            return (rgb & 0x00FFFFFFu) | ((uint32_t)opa << 24);
+        }
+    }
+
+    const uint8_t last_i = (uint8_t)LV_MIN((int)grad->stops_count - 1, LV_GRADIENT_MAX_STOPS - 1);
+    return lv_draw_ppa_fill_color_u32(grad->stops[last_i].color,
+                                      (lv_opa_t)(((uint16_t)grad->stops[last_i].opa * fill_opa) >> 8));
+}
+
 static void LV_ATTRIBUTE_FAST_MEM enqueue_strip(lv_draw_ppa_unit_t * u, lv_draw_buf_t * draw_buf,
                                                 const lv_area_t * strip, const lv_area_t * buf_area, uint32_t color)
 {
     lv_area_t rel;
     lv_area_copy(&rel, strip);
     lv_area_move(&rel, -buf_area->x1, -buf_area->y1);
-
-    ppa_fill_oper_config_t cfg = {0};
-    cfg.fill_argb_color.val = color;
-    cfg.out.block_offset_x  = rel.x1;
-    cfg.out.block_offset_y  = rel.y1;
-    cfg.out.fill_cm         = lv_color_format_to_ppa_fill(draw_buf->header.cf);
-    cfg.fill_block_w        = lv_area_get_width(&rel);
-    cfg.fill_block_h        = lv_area_get_height(&rel);
-    cfg.out.buffer          = draw_buf->data;
-    cfg.out.buffer_size     = draw_buf->data_size;
-    cfg.out.pic_w           = draw_buf->header.w;
-    cfg.out.pic_h           = draw_buf->header.h;
-    cfg.mode                = LV_PPA_TRANS_MODE;
-    cfg.user_data           = u;
-
-    lv_draw_ppa_begin_op(u);
-    esp_err_t ret = ppa_do_fill(u->fill_client, &cfg);
-    if(ret != ESP_OK) {
-        lv_draw_ppa_cancel_op(u);
-        LV_LOG_ERROR("PPA gradient strip failed: %d", ret);
-    }
+    lv_draw_ppa_solid_op(u, draw_buf, &rel, color);
 }
 
 #endif /* LV_USE_PPA_GRADIENT */
