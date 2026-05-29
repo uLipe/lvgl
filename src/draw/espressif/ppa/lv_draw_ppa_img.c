@@ -16,6 +16,7 @@ static void lv_draw_img_ppa_core(lv_draw_task_t * t, const lv_draw_image_dsc_t *
                                  const lv_area_t * img_coords, const lv_area_t * clipped_img_area);
 static bool ppa_rotation_to_srm_angle(int32_t rotation, ppa_srm_rotation_angle_t * angle_out);
 static bool ppa_transform_requested(const lv_draw_image_dsc_t * draw_dsc);
+static void ppa_srm_apply_opa(ppa_srm_oper_config_t * cfg, lv_color_format_t src_cf, lv_opa_t opa);
 
 
 void LV_ATTRIBUTE_FAST_MEM lv_draw_ppa_img(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc,
@@ -71,6 +72,16 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
     uint32_t dest_block_w = lv_area_get_width(&dest_area);
     uint32_t dest_block_h = lv_area_get_height(&dest_area);
 
+    if(src_cf == LV_COLOR_FORMAT_A8 && !ppa_transform_requested(draw_dsc)) {
+        lv_area_t mask_area;
+        lv_area_copy(&mask_area, img_coords);
+        mask_area.x2 = mask_area.x1 + (int32_t)decoded->header.w - 1;
+        mask_area.y2 = mask_area.y1 + (int32_t)decoded->header.h - 1;
+        lv_draw_ppa_glyph_blend(u, draw_buf, &mask_area, src_buf, decoded->header.stride, draw_dsc->recolor,
+                                draw_dsc->opa, &t->clip_area, &layer->buf_area);
+        return;
+    }
+
 #if LV_USE_PPA_TRANSFORM
     if(ppa_transform_requested(draw_dsc)) {
         ppa_srm_rotation_angle_t srm_angle;
@@ -120,8 +131,8 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
         srm_cfg.mirror_y = (draw_dsc->scale_y < 0);
 
         srm_cfg.rgb_swap = false;
-        srm_cfg.byte_swap = false;
-        srm_cfg.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+        srm_cfg.byte_swap = lv_color_format_needs_ppa_byte_swap(src_cf);
+        ppa_srm_apply_opa(&srm_cfg, src_cf, draw_dsc->opa);
         srm_cfg.mode = LV_PPA_TRANS_MODE;
         srm_cfg.user_data = u;
 
@@ -146,7 +157,7 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
     cfg.in_bg.blend_cm = lv_color_format_to_ppa_blend(dest_cf);
 
     cfg.bg_rgb_swap = false;
-    cfg.bg_byte_swap = false;
+    cfg.bg_byte_swap = lv_color_format_needs_ppa_byte_swap(dest_cf);
     cfg.bg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
     cfg.bg_ck_en = false;
 
@@ -159,7 +170,7 @@ static void LV_ATTRIBUTE_FAST_MEM lv_draw_img_ppa_core(lv_draw_task_t * t, const
     cfg.in_fg.block_offset_y = src_area.y1;
     cfg.in_fg.blend_cm = lv_color_format_to_ppa_blend(src_cf);
     cfg.fg_rgb_swap = false;
-    cfg.fg_byte_swap = false;
+    cfg.fg_byte_swap = lv_color_format_needs_ppa_byte_swap(src_cf);
 
     bool src_has_alpha = (src_cf == LV_COLOR_FORMAT_ARGB8888);
     if(src_has_alpha) {
@@ -223,6 +234,23 @@ static bool LV_ATTRIBUTE_FAST_MEM ppa_transform_requested(const lv_draw_image_ds
     return (draw_dsc->rotation != 0 ||
             draw_dsc->scale_x != LV_SCALE_NONE ||
             draw_dsc->scale_y != LV_SCALE_NONE);
+}
+
+static void LV_ATTRIBUTE_FAST_MEM ppa_srm_apply_opa(ppa_srm_oper_config_t * cfg, lv_color_format_t src_cf,
+                                                    lv_opa_t opa)
+{
+    if(opa >= (lv_opa_t)LV_OPA_MAX) {
+        cfg->alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+        return;
+    }
+    if(src_cf == LV_COLOR_FORMAT_ARGB8888) {
+        cfg->alpha_update_mode = PPA_ALPHA_SCALE;
+        cfg->alpha_scale_ratio = (float)opa / 255.0f;
+    }
+    else {
+        cfg->alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+        cfg->alpha_fix_val = opa;
+    }
 }
 
 #endif /* LV_USE_PPA */
