@@ -650,9 +650,9 @@ menu "LVGL configuration"
 		default n
 		depends on LV_USE_PPA
 		help
-			Decompose LV_DRAW_TASK_TYPE_BORDER tasks (radius=0, opaque) into up to four
-			rectangular strips and submit them to the PPA fill client. Borders with
-			rounded corners or non-opaque alpha keep using the SW renderer.
+			Decompose LV_DRAW_TASK_TYPE_BORDER tasks into PPA solid fills. Sharp corners
+			use up to four strips; rounded corners use scanline strips (binary edges,
+			no anti-aliasing). Partial arcs and image-based arcs stay on SW.
 
 		config LV_USE_PPA_MASK_RECT
 		bool "Use Espressif PPA fills for sharp-corner mask rectangles"
@@ -697,9 +697,10 @@ menu "LVGL configuration"
 		default n
 		depends on LV_USE_PPA
 		help
-			Approximate LV_GRAD_DIR_HOR / LV_GRAD_DIR_VER fills with two stops by
-			submitting LV_PPA_GRADIENT_STEPS solid-color strips through the PPA fill
-			client. Multi-stop, linear, radial and conical gradients keep the SW path.
+			Approximate LV_GRAD_DIR_HOR / LV_GRAD_DIR_VER fills by submitting
+			LV_PPA_GRADIENT_STEPS solid-color strips through the PPA fill client.
+			Multi-stop HOR/VER gradients are supported; linear, radial and conical
+			gradients keep the SW path.
 
 		config LV_PPA_GRADIENT_STEPS
 		int "Number of bands per accelerated gradient"
@@ -729,6 +730,24 @@ menu "LVGL configuration"
 		help
 			Rounded fills with radius below this threshold stay on SW because the
 			per-op overhead of many tiny PPA fills outweighs the SW cost.
+
+		config LV_USE_PPA_ARC
+		bool "Use PPA border path for full-ring arcs"
+		default n
+		depends on LV_USE_PPA && LV_USE_PPA_BORDER
+		help
+			Map a 360-degree LV_DRAW_TASK_TYPE_ARC (solid colour, no image) to the
+			rounded PPA border worker. Partial arcs and image arcs stay on SW.
+
+		config LV_USE_PPA_LABEL
+		bool "Use PPA A8 blend for bitmap text glyphs"
+		default n
+		depends on LV_USE_PPA
+		help
+			Route LV_DRAW_TASK_TYPE_LABEL and LV_DRAW_TASK_TYPE_LETTER bitmap glyphs
+			(A1-A8) through the PPA blend client with an A8 foreground mask.
+			Imgfont (IMAGE) glyphs use the PPA image path; rotated bitmap glyphs
+			fall back to SW when LV_USE_DRAW_SW is enabled. Vector glyphs stay on SW.
 
 		config LV_USE_PPA_LINE
 		bool "Use PPA fill for axis-aligned lines"
@@ -780,7 +799,7 @@ menu "LVGL configuration"
 		int "PPA fill client maximum pending transactions"
 		depends on LV_USE_PPA_ASYNC
 		default 16
-		range 1 64
+		range 1 512
 		help
 			Maximum number of PPA fill transactions that can be queued in the driver. The driver
 			blocks the caller (FreeRTOS-aware) when the queue is full.
@@ -789,13 +808,13 @@ menu "LVGL configuration"
 		int "PPA blend client maximum pending transactions"
 		depends on LV_USE_PPA_ASYNC
 		default 16
-		range 1 64
+		range 1 512
 
 		config LV_PPA_SRM_PENDING_TRANS
 		int "PPA SRM client maximum pending transactions"
 		depends on LV_USE_PPA_ASYNC
 		default 16
-		range 1 64
+		range 1 512
 
 		config LV_USE_ESP_DMA2D
 		bool "Use Espressif's DMA2D for copy and format conversion"

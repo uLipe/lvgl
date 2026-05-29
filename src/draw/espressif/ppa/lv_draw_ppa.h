@@ -78,6 +78,15 @@ void lv_draw_ppa_line(lv_draw_task_t * t, const lv_draw_line_dsc_t * dsc);
 void lv_draw_ppa_triangle(lv_draw_task_t * t, const lv_draw_triangle_dsc_t * dsc);
 #endif
 
+#if LV_USE_PPA_ARC
+void lv_draw_ppa_arc(lv_draw_task_t * t, const lv_draw_arc_dsc_t * dsc, const lv_area_t * coords);
+#endif
+
+#if 0
+void lv_draw_ppa_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, const lv_area_t * coords);
+void lv_draw_ppa_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, const lv_area_t * coords);
+#endif
+
 #if LV_USE_PPA_RUNTIME_TUNING || LV_USE_PPA_STATS
 typedef enum {
     LV_DRAW_PPA_CLIENT_FILL = 0,
@@ -110,7 +119,7 @@ esp_err_t lv_draw_ppa_set_burst_length(lv_draw_ppa_client_kind_t client,
 
 /**
  * Update the maximum number of pending transactions for one PPA client.
- * @param pending  1..64 (driver-imposed range)
+ * @param pending  1..512
  * @return ESP_OK on success.
  */
 esp_err_t lv_draw_ppa_set_pending_trans(lv_draw_ppa_client_kind_t client,

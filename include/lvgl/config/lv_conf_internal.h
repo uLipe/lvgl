@@ -1269,6 +1269,20 @@
             #define LV_USE_PPA_TRIANGLE          0
         #endif
     #endif
+    #ifndef LV_USE_PPA_ARC
+        #ifdef CONFIG_LV_USE_PPA_ARC
+            #define LV_USE_PPA_ARC CONFIG_LV_USE_PPA_ARC
+        #else
+            #define LV_USE_PPA_ARC               0
+        #endif
+    #endif
+    #ifndef LV_USE_PPA_LABEL
+        #ifdef CONFIG_LV_USE_PPA_LABEL
+            #define LV_USE_PPA_LABEL CONFIG_LV_USE_PPA_LABEL
+        #else
+            #define LV_USE_PPA_LABEL             0
+        #endif
+    #endif
 
     /** Phase 4 runtime tuning + telemetry. */
     #ifndef LV_USE_PPA_RUNTIME_TUNING

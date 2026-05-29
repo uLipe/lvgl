@@ -43,7 +43,7 @@ esp_err_t lv_draw_ppa_set_pending_trans(lv_draw_ppa_client_kind_t client, uint8_
     lv_draw_ppa_unit_t * u = lv_draw_ppa_unit_instance;
     if(u == NULL) return ESP_ERR_INVALID_STATE;
     if(client >= LV_DRAW_PPA_CLIENT_COUNT) return ESP_ERR_INVALID_ARG;
-    if(pending == 0 || pending > 64) return ESP_ERR_INVALID_ARG;
+    if(pending == 0 || pending > 512) return ESP_ERR_INVALID_ARG;
 
     u->client_cfg[client].max_pending_trans_num = pending;
     return reregister_client(u, client);
@@ -115,7 +115,7 @@ static esp_err_t reregister_client(lv_draw_ppa_unit_t * u, lv_draw_ppa_client_ki
     /* Drain any in-flight work before unregistering the affected client. */
     if(u->task_act != NULL) {
         if(atomic_load(&u->pending_ops) > 0) {
-            lv_thread_sync_wait(&u->done_sync);
+            xSemaphoreTake(u->done_sem, portMAX_DELAY);
         }
         u->task_act->state = LV_DRAW_TASK_STATE_FINISHED;
         u->task_act = NULL;
